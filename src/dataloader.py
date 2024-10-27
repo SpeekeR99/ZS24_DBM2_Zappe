@@ -91,15 +91,15 @@ def transform_data_to_numeric(df):
     format_mapping = {value: idx for idx, value in enumerate(df["format"].unique())}
 
     # Index to the one hot encoding
-    # df["race"] = df["race"].map(race_mapping)
-    # df["cls"] = df["cls"].map(cls_mapping)
-    # df["game_map"] = df["game_map"].map(game_map_mapping)
-    # df["format"] = df["format"].map(format_mapping)
+    df["race"] = df["race"].map(race_mapping)
+    df["cls"] = df["cls"].map(cls_mapping)
+    df["game_map"] = df["game_map"].map(game_map_mapping)
+    df["format"] = df["format"].map(format_mapping)
 
     # One hot encoding
-    df["race"] = df["race"].apply(lambda x: [1 if x == key else 0 for key in race_mapping.keys()])
-    df["cls"] = df["cls"].apply(lambda x: [1 if x == key else 0 for key in cls_mapping.keys()])
-    df["game_map"] = df["game_map"].apply(lambda x: [1 if x == key else 0 for key in game_map_mapping.keys()])
-    df["format"] = df["format"].apply(lambda x: [1 if x == key else 0 for key in format_mapping.keys()])
+    # df["race"] = df["race"].apply(lambda x: [1 if x == key else 0 for key in race_mapping.keys()])
+    # df["cls"] = df["cls"].apply(lambda x: [1 if x == key else 0 for key in cls_mapping.keys()])
+    # df["game_map"] = df["game_map"].apply(lambda x: [1 if x == key else 0 for key in game_map_mapping.keys()])
+    # df["format"] = df["format"].apply(lambda x: [1 if x == key else 0 for key in format_mapping.keys()])
 
-    return df, (race_mapping, cls_mapping, game_map_mapping, format_mapping)
+    return df, {"race": race_mapping, "cls": cls_mapping, "game_map": game_map_mapping, "format": format_mapping}
