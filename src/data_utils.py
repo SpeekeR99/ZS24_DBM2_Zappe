@@ -28,7 +28,6 @@ def game_map_to_format(game_map):
 class Player:
     def __init__(self, player_id, race, cls, winning_team, kills, deaths, damage_done, healing_done, damage_taken, healing_taken):
         self.player_id = player_id
-        self.faction = race_to_faction(race)
         self.race = race
         self.cls = cls
         self.winning_team = winning_team
@@ -38,13 +37,14 @@ class Player:
         self.healing_done = healing_done
         self.damage_taken = damage_taken
         self.healing_taken = healing_taken
+        self.faction = race_to_faction(race)
 
 
 class BattleGround:
     def __init__(self, match_id, game_map, start_time, duration):
         self.match_id = match_id
         self.game_map = game_map
-        self.format = game_map_to_format(game_map)
         self.start_time = start_time
         self.duration = duration
         self.players = []
+        self.format = game_map_to_format(game_map)
