@@ -1,5 +1,4 @@
 import pandas as pd
-from src.data_utils import game_map_to_format, race_to_faction
 
 
 def load_bg_data(file_path):
@@ -46,8 +45,61 @@ def load_data(bg_file_path, player_file_path):
     # Merge the two DataFrames
     df = pd.merge(player_df, bg_df, on="match_id")
 
-    # Add a column for the faction of the Player and the format of the BattleGround
-    df["faction"] = df["race"].apply(race_to_faction)
-    df["format"] = df["game_map"].apply(game_map_to_format)
+    # Check for missing values
+    # print("Missing values:")
+    # print(df.isnull().sum())
 
     return df
+
+
+def game_map_to_format(game_map):
+    maps_10_v_10 = ["Warsong Gulch", "Twin Peaks", "Battle for Gilneas", "Temple of Kotmogu", "Silvershard Mines"]
+    maps_15_v_15 = ["Arathi Basin", "Eye of the Storm", "Deepwind Gorge"]
+    maps_40_v_40 = ["Alterac Valley", "Isle of Conquest", "The Battle for Gilneas"]
+
+    if game_map in maps_10_v_10:
+        return "10v10"
+    elif game_map in maps_15_v_15:
+        return "15v15"
+    elif game_map in maps_40_v_40:
+        return "40v40"
+    else:
+        return "unknown"
+
+
+def transform_data_to_numeric(df):
+    print("Transforming data...")
+
+    # Throw away game_type information -- all are BattleGrounds
+    df = df.drop(columns=["game_type"])
+
+    # player_id is float for some reason
+    df["player_id"] = df["player_id"].astype(int)
+
+    # Add a column for the faction of the Player and the format of the BattleGround
+    df["format"] = df["game_map"].apply(game_map_to_format)
+
+    # Transform start_time and duration to number
+    df["start_time"] = pd.to_datetime(df["start_time"]).astype(int)
+    # Duration is in format mm:ss, convert it to seconds
+    df["duration"] = df["duration"].apply(lambda x: int(x.split(":")[0]) * 60 + int(x.split(":")[1]))
+
+    # Replace all strings with one hot encoding (race, cls, game_map, format)
+    race_mapping = {value: idx for idx, value in enumerate(df["race"].unique())}
+    cls_mapping = {value: idx for idx, value in enumerate(df["cls"].unique())}
+    game_map_mapping = {value: idx for idx, value in enumerate(df["game_map"].unique())}
+    format_mapping = {value: idx for idx, value in enumerate(df["format"].unique())}
+
+    # Index to the one hot encoding
+    # df["race"] = df["race"].map(race_mapping)
+    # df["cls"] = df["cls"].map(cls_mapping)
+    # df["game_map"] = df["game_map"].map(game_map_mapping)
+    # df["format"] = df["format"].map(format_mapping)
+
+    # One hot encoding
+    df["race"] = df["race"].apply(lambda x: [1 if x == key else 0 for key in race_mapping.keys()])
+    df["cls"] = df["cls"].apply(lambda x: [1 if x == key else 0 for key in cls_mapping.keys()])
+    df["game_map"] = df["game_map"].apply(lambda x: [1 if x == key else 0 for key in game_map_mapping.keys()])
+    df["format"] = df["format"].apply(lambda x: [1 if x == key else 0 for key in format_mapping.keys()])
+
+    return df, (race_mapping, cls_mapping, game_map_mapping, format_mapping)
