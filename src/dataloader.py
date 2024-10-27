@@ -1,8 +1,5 @@
 import pandas as pd
-import pickle
-from src.data_utils import BattleGround, Player, game_map_to_format
-
-CACHE_PATH = "data/cache.pickle"
+from src.data_utils import game_map_to_format, race_to_faction
 
 
 def load_bg_data(file_path):
@@ -16,59 +13,41 @@ def load_bg_data(file_path):
     df = df[df["game_map"].apply(game_map_to_format) != "unknown"]
     bg_lines = df.shape[0]
 
-    # Create a list of BattleGrounds (containers)
-    battlegrounds = {}
-    for idx, row in df.iterrows():
-        bg = BattleGround(row["match_id"], row["game_map"], row["start_time"], row["duration"])
-        battlegrounds[row["match_id"]] = bg
-
     print(f"Loaded {bg_lines} BattleGrounds out of {all_lines} PvP records")
     print(f"({bg_lines / all_lines * 100:.2f} % of all PvP records are BattleGrounds)")
 
-    return battlegrounds
+    return df
 
 
-def load_player_data(file_path, battlegrounds):
+def load_player_data(file_path, battlegrounds_df):
     df = pd.read_csv(file_path)
     all_lines = df.shape[0]
 
-    # Iterate over all the players and add them to their corresponding BattleGround
-    counter = 0
-    for idx, row in df.iterrows():
-        # If player played in a BattleGround add him to the corresponding BattleGround
-        if row["match_id"] in battlegrounds:
-            # If any player data is missing, skip this player (what is important is the race and class mainly)
-            # This is basically missing values cleaning
-            if pd.isnull(row["player_id"]) or pd.isnull(row["race"] or pd.isnull(row["cls"])):
-                continue
+    # Filter out all lines that are not relevant for BattleGrounds
+    df = df[df["match_id"].isin(battlegrounds_df["match_id"].values)]
 
-            player = Player(row["player_id"], row["race"], row["cls"], row["winner"], row["killing_blows"], row["deaths"], row["damage"], row["healing"], row["damage_taken"], row["healing_taken"])
-            battlegrounds[row["match_id"]].players.append(player)
-            counter += 1
+    # Some players (394 737 of them) have missing values, drop them
+    df = df.dropna(subset=["player_id", "race", "cls"])
 
-    print(f"Loaded {counter} Players from BatlleGrounds out of {all_lines} Players")
-    print(f"({counter / all_lines * 100:.2f} % of all Players are Players from BattleGrounds)")
+    bg_lines = df.shape[0]
 
-    return battlegrounds
+    print(f"Loaded {bg_lines} Players from BatlleGrounds out of {all_lines} Players")
+    print(f"({bg_lines / all_lines * 100:.2f} % of all Players are Players from BattleGrounds)")
+
+    return df
 
 
-def load_data(bg_file_path, player_file_path, force_reload=False):
+def load_data(bg_file_path, player_file_path):
     print("Loading data...")
 
-    if not force_reload:
-        try:
-            with open(CACHE_PATH, "rb") as fp:
-                battlegrounds = pickle.load(fp)
-                print(f"Loaded {len(battlegrounds)} BattleGrounds from cache")
-                return battlegrounds
-        except FileNotFoundError:
-            pass
+    bg_df = load_bg_data(bg_file_path)
+    player_df = load_player_data(player_file_path, bg_df)
 
-    battlegrounds = load_bg_data(bg_file_path)
-    battlegrounds = load_player_data(player_file_path, battlegrounds)
+    # Merge the two DataFrames
+    df = pd.merge(player_df, bg_df, on="match_id")
 
-    with open(CACHE_PATH, "wb") as fp:
-        pickle.dump(battlegrounds, fp)
-        print(f"Saved {len(battlegrounds)} BattleGrounds to cache")
+    # Add a column for the faction of the Player and the format of the BattleGround
+    df["faction"] = df["race"].apply(race_to_faction)
+    df["format"] = df["game_map"].apply(game_map_to_format)
 
-    return battlegrounds
+    return df
