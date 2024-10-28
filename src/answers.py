@@ -1,4 +1,28 @@
+import matplotlib.pyplot as plt
 import pandas as pd
+
+
+def plot_win_rate(win_rate, win_rate_of_what, x_label):
+    fig = plt.figure(figsize=(10, 6))
+    ax = fig.add_subplot(111)
+
+    width = win_rate["count"] / win_rate["count"].max()
+    # Normalize the width to <0.10; 0.75> so the extremes are not so extreme
+    lower, upper = 0.10, 0.75
+    width = lower + upper * (width - width.min()) / (width.max() - width.min())
+    ax.bar(win_rate.index, win_rate["mean"], width=width, color="green")
+    for idx, value in enumerate(win_rate["mean"]):
+        ax.text(idx, value, f"{value:.2f}", ha="center", va="bottom")
+
+    ax.set_xticks(range(len(win_rate.index)))
+    ax.set_xticklabels(win_rate.index, rotation=22.5)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel("Win rate")
+    ax.set_title(f"Win rate of {win_rate_of_what}")
+
+    plt.grid()
+    plt.savefig(f"img/win_rate_{win_rate_of_what}.svg")
+    plt.show()
 
 
 def answer_1(df, mappings):
@@ -21,7 +45,9 @@ def answer_1(df, mappings):
     # Sort and print
     win_rate = pd.DataFrame(win_rate)
     win_rate = win_rate.sort_values(by="mean", ascending=False)
-    print(win_rate)
+
+    # Plot the win rate
+    plot_win_rate(win_rate, "classes", "Class")
 
 
 def answer_2(df, mappings):
@@ -44,7 +70,9 @@ def answer_2(df, mappings):
     # Sort and print
     win_rate = pd.DataFrame(win_rate)
     win_rate = win_rate.sort_values(by="mean", ascending=False)
-    print(win_rate)
+
+    # Plot the win rate
+    plot_win_rate(win_rate, "races", "Race")
 
 
 def asnwer_3(df, mappings):
@@ -79,8 +107,10 @@ def asnwer_3(df, mappings):
 
     # Sort and print
     win_rate = pd.DataFrame(win_rate)
-    win_rate = win_rate.sort_values(by="mean", ascending=False)
-    print(win_rate)
+    win_rate = win_rate.sort_index(ascending=True)
+
+    # Plot the win rate
+    plot_win_rate(win_rate, "healers", "Is Healer")
 
     # First solve healer counts for each match_id
     temp = df.groupby("match_id")["healer"].sum()
@@ -106,6 +136,8 @@ def asnwer_3(df, mappings):
     for group in df["format"].unique():
         format_name = format_mapping_reversed[group]
         win_rate_df = pd.DataFrame(win_rate[format_name])
-        win_rate_df = win_rate_df.sort_values(by="mean", ascending=False)
-        print(f"Format: {format_name}")
         print(win_rate_df)
+        win_rate_df = win_rate_df.sort_index(ascending=True)
+
+        # Plot the win rate
+        plot_win_rate(win_rate_df, f"{format_name}_healers", "Number of Healers")
