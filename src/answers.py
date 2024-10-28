@@ -80,7 +80,6 @@ def asnwer_3(df, mappings):
     3) Is having more healers in the team beneficial?
     """
     class_mapping = mappings["cls"]
-    class_mapping_reversed = {v: k for k, v in class_mapping.items()}
     format_mapping = mappings["format"]
     format_mapping_reversed = {v: k for k, v in format_mapping.items()}
 
@@ -141,3 +140,43 @@ def asnwer_3(df, mappings):
 
         # Plot the win rate
         plot_win_rate(win_rate_df, f"{format_name}_healers", "Number of Healers")
+
+
+def answer_4(df):
+    """
+    4) Are players more active during the weekends?
+    """
+    # Count number of matches for each day
+    df.loc[:, "day"] = pd.to_datetime(df["start_time"], unit="ns").dt.date
+    df.loc[:, "number_of_matches_that_day"] = df.groupby("day")["match_id"].transform("count")
+    df.loc[:, "day_of_week"] = pd.to_datetime(df["start_time"], unit="ns").dt.dayofweek
+
+    # boxplot function does all this for me
+    # # Calculate the average number of matches for each day of the week
+    # number_of_matches = {"mean": {}, "std": {}, "count": {}}
+    #
+    # for day in df["day_of_week"].unique():
+    #     number_of_matches["mean"][day] = df[df["day_of_week"] == day]["number_of_matches_that_day"].mean()
+    #     number_of_matches["std"][day] = df[df["day_of_week"] == day]["number_of_matches_that_day"].std()
+    #     number_of_matches["count"][day] = df[df["day_of_week"] == day]["number_of_matches_that_day"].count()
+    #
+    # # Sort and print
+    # number_of_matches = pd.DataFrame(number_of_matches)
+    # days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    # number_of_matches.loc[:, "day_name"] = [days[day] for day in number_of_matches.index]
+    # number_of_matches = number_of_matches.sort_index(ascending=True)
+
+    # Plot the number of matches
+    fig = plt.figure(figsize=(10, 6))
+    ax = fig.add_subplot(111)
+
+    # I will use boxplot here, because standard deviation finally has some sense (unlike with win rate)
+    ax.boxplot([df[df["day_of_week"] == day]["number_of_matches_that_day"] for day in range(7)], labels=days)
+
+    ax.set_xlabel("Day of the week")
+    ax.set_ylabel("Number of matches")
+    ax.set_title("Number of matches per day of the week")
+
+    plt.grid()
+    plt.savefig("img/number_of_matches_per_day.svg")
+    plt.show()

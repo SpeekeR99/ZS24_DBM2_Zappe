@@ -1,7 +1,7 @@
 from src.download import dataset_download
 from src.dataloader import load_data, transform_data_to_numeric
 from src.data_analysis import my_pca
-from src.answers import answer_1, answer_2, asnwer_3
+from src.answers import answer_1, answer_2, asnwer_3, answer_4
 
 
 def main():
@@ -27,9 +27,10 @@ def main():
     # components, pca = my_pca(df, plot=True)
 
     # Answer the questions
-    answer_1(df, mappings)
-    answer_2(df, mappings)
-    asnwer_3(df, mappings)
+    # answer_1(df, mappings)
+    # answer_2(df, mappings)
+    # asnwer_3(df, mappings)
+    answer_4(df)
 
 
 if __name__ == "__main__":
