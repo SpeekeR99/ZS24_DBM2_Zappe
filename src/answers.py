@@ -1,9 +1,12 @@
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+from scipy.interpolate import make_interp_spline
 import pandas as pd
+import numpy as np
 
 
-def plot_win_rate(win_rate, win_rate_of_what, x_label):
-    fig = plt.figure(figsize=(10, 6))
+def plot_win_rate(win_rate, win_rate_of_what, x_label, add_count=True):
+    fig = plt.figure(figsize=(10, 7))
     ax = fig.add_subplot(111)
 
     width = win_rate["count"] / win_rate["count"].max()
@@ -14,11 +17,29 @@ def plot_win_rate(win_rate, win_rate_of_what, x_label):
     for idx, value in enumerate(win_rate["mean"]):
         ax.text(idx, value, f"{value:.2f}", ha="center", va="bottom")
 
+    # Plot the distribution based on the count
+    if add_count:
+        # Normalize the count to range of <0; win_rate[mean].max()>
+        range_norm = (win_rate["count"] / win_rate["count"].max()) * win_rate["mean"].max() * 0.75
+        spl = make_interp_spline(range(len(win_rate.index)), range_norm, k=3)
+        x_smooth = np.linspace(0, len(win_rate.index) - 1, 300)
+        y_smooth = spl(x_smooth)
+
+        ax.plot(x_smooth, y_smooth, color="blue", label="Count")
+
     ax.set_xticks(range(len(win_rate.index)))
     ax.set_xticklabels(win_rate.index, rotation=22.5)
     ax.set_xlabel(x_label)
     ax.set_ylabel("Win rate")
     ax.set_title(f"Win rate of {win_rate_of_what}")
+
+    # Create legend
+    bar_patch = Line2D([0], [0], color="green", label="Win rate")
+    line_patch = Line2D([0], [0], color="blue", label="Count")
+    if add_count:
+        ax.legend(handles=[bar_patch, line_patch], loc="best")
+    else:
+        ax.legend(handles=[bar_patch], loc="best")
 
     plt.grid()
     plt.savefig(f"img/win_rate_{win_rate_of_what}.svg")
@@ -47,7 +68,7 @@ def answer_1(df, mappings):
     win_rate = win_rate.sort_values(by="mean", ascending=False)
 
     # Plot the win rate
-    plot_win_rate(win_rate, "classes", "Class")
+    plot_win_rate(win_rate, "classes", "Class", add_count=False)
 
 
 def answer_2(df, mappings):
@@ -72,7 +93,7 @@ def answer_2(df, mappings):
     win_rate = win_rate.sort_values(by="mean", ascending=False)
 
     # Plot the win rate
-    plot_win_rate(win_rate, "races", "Race")
+    plot_win_rate(win_rate, "races", "Race", add_count=False)
 
 
 def asnwer_3(df, mappings):
@@ -109,7 +130,7 @@ def asnwer_3(df, mappings):
     win_rate = win_rate.sort_index(ascending=True)
 
     # Plot the win rate
-    plot_win_rate(win_rate, "healers", "Is Healer")
+    plot_win_rate(win_rate, "healers", "Is Healer", add_count=False)
 
     # First solve healer counts for each match_id
     temp = df.groupby("match_id")["healer"].sum()
@@ -135,7 +156,6 @@ def asnwer_3(df, mappings):
     for group in df["format"].unique():
         format_name = format_mapping_reversed[group]
         win_rate_df = pd.DataFrame(win_rate[format_name])
-        print(win_rate_df)
         win_rate_df = win_rate_df.sort_index(ascending=True)
 
         # Plot the win rate
@@ -166,12 +186,28 @@ def answer_4(df):
     # number_of_matches.loc[:, "day_name"] = [days[day] for day in number_of_matches.index]
     # number_of_matches = number_of_matches.sort_index(ascending=True)
 
+    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
     # Plot the number of matches
     fig = plt.figure(figsize=(10, 6))
     ax = fig.add_subplot(111)
 
     # I will use boxplot here, because standard deviation finally has some sense (unlike with win rate)
-    ax.boxplot([df[df["day_of_week"] == day]["number_of_matches_that_day"] for day in range(7)], labels=days)
+    ax.boxplot(
+        [df[df["day_of_week"] == day]["number_of_matches_that_day"] for day in range(len(days))],
+        labels=days,
+        patch_artist=True,
+        boxprops=dict(facecolor="green"),
+        medianprops=dict(color="yellow", linewidth=2),
+        meanline=True,
+        showmeans=True,
+        meanprops=dict(color="red", linewidth=2),
+    )
+
+    # Make legend for the boxplot
+    custom_lines = [Line2D([0], [0], color="red", lw=2),
+                    Line2D([0], [0], color="yellow", lw=2)]
+    ax.legend(custom_lines, ["Mean", "Median"])
 
     ax.set_xlabel("Day of the week")
     ax.set_ylabel("Number of matches")

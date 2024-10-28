@@ -1,6 +1,6 @@
 from src.download import dataset_download
 from src.dataloader import load_data, transform_data_to_numeric
-from src.data_analysis import my_pca
+from src.data_analysis import correlation, my_pca
 from src.answers import answer_1, answer_2, asnwer_3, answer_4
 
 
@@ -23,13 +23,16 @@ def main():
     # Transform strings to one hot encoding, transform dates to numbers, drop unnecessary columns
     df, mappings = transform_data_to_numeric(df)
 
+    # Correlation
+    correlation(df)
+
     # PCA
-    # components, pca = my_pca(df, plot=True)
+    components, pca = my_pca(df)
 
     # Answer the questions
-    # answer_1(df, mappings)
-    # answer_2(df, mappings)
-    # asnwer_3(df, mappings)
+    answer_1(df, mappings)
+    answer_2(df, mappings)
+    asnwer_3(df, mappings)
     answer_4(df)
 
 
