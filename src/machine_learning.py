@@ -36,16 +36,22 @@ class SubModel1(torch.nn.Module):
         return final
 
 
+class RandomBaseline1(SubModel1):
+    """
+    Random baseline model for SubModel1
+    """
+    def __init__(self):
+        super(RandomBaseline1, self).__init__()
+
+    def forward(self, x):
+        return torch.randn((x.shape[0], 15))
+
+
 def train_model(model, train_data, train_target, test_data, test_target, loss_function, lr=0.001, batch_size=128, epochs=10):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-
-    train_data = torch.tensor(train_data, dtype=torch.float32).to(device)
-    train_target = torch.tensor(train_target, dtype=torch.float32).to(device)
-    test_data = torch.tensor(test_data, dtype=torch.float32).to(device)
-    test_target = torch.tensor(test_target, dtype=torch.float32).to(device)
 
     print("Training model...")
     for epoch in range(epochs):
@@ -90,7 +96,24 @@ def train_model(model, train_data, train_target, test_data, test_target, loss_fu
     return model
 
 
-def sub_model_1_data_preprocess(df):
+def test_model_against_baseline(model, baseline, test_data, test_target, loss_function):
+    model.eval()
+    baseline.eval()
+
+    model_output = model(test_data)
+    baseline_output = baseline(test_data)
+
+    model_loss = loss_function(model_output, test_target)
+    baseline_loss = loss_function(baseline_output, test_target)
+
+    print(f"Model loss: {model_loss.item()}, Random Baseline loss: {baseline_loss.item()}")
+
+
+def get_mock_db_for_sub_model_1(df, how_many_last_games=10):
+    """
+    This function serves as a mock database for player history stats
+    This would be replaced by a real database with real-time updates of player stats in the real world
+    """
     # Get the data and the header
     header = df.columns.values.tolist()
     data = df.to_numpy()
@@ -105,13 +128,20 @@ def sub_model_1_data_preprocess(df):
             player_dict[player_id] = []
         player_dict[player_id].append(line)
 
-    # Take last 11 games of each player
-    how_many_last_games = 11
+    # Take last 10 games of each player
     for key in player_dict:
         player_dict[key] = np.array(player_dict[key][:how_many_last_games])
-        # If the player has less than 11 games, make it 11 by averaging his games and padding with the average
+        # If the player has less than 10 games, make it 10 by averaging his games and padding with the average
         while player_dict[key].shape[0] < how_many_last_games:
             player_dict[key] = np.vstack((player_dict[key], player_dict[key].mean(axis=0)))
+
+    return player_dict
+
+
+def sub_model_1_data_preprocess(df):
+    # Get the data in the format for the model
+    how_many_last_games = 11  # 10 for training, 1 for testing
+    player_dict = get_mock_db_for_sub_model_1(df, how_many_last_games=how_many_last_games)
 
     # Split the data into data and target
     train_data = []
@@ -158,7 +188,13 @@ def sub_model_1(df, force_retrain=False):
     path_to_model = "models/sub_model_1.pth"
 
     # Transform the data
-    train_data, train_target, test_data, test_target, normalization_dict = sub_model_1_data_preprocess(df)
+    train_data, train_target, test_data, test_target, norm_dict = sub_model_1_data_preprocess(df)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    train_data = torch.tensor(train_data, dtype=torch.float32).to(device)
+    train_target = torch.tensor(train_target, dtype=torch.float32).to(device)
+    test_data = torch.tensor(test_data, dtype=torch.float32).to(device)
+    test_target = torch.tensor(test_target, dtype=torch.float32).to(device)
 
     if os.path.exists(path_to_model) and not force_retrain:
         print("Loading pretrained model from cache...")
@@ -172,9 +208,13 @@ def sub_model_1(df, force_retrain=False):
         loss_function = torch.nn.MSELoss()
         model = train_model(model, train_data, train_target, test_data, test_target, loss_function, lr=0.001, batch_size=128, epochs=10)
 
+        # Test the model against a random baseline
+        random_baseline = RandomBaseline1()
+        test_model_against_baseline(model, random_baseline, test_data, test_target, loss_function)
+
         # Save the model
         torch.save(model.state_dict(), path_to_model)
 
     print("Sub Model 1 finished")
 
-    return model, normalization_dict
+    return model, norm_dict
