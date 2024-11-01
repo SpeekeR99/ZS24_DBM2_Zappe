@@ -2,5 +2,7 @@ kagglehub
 numpy
 pandas
 scikit-learn
+scipy
 matplotlib
 pycirclize
+torch
