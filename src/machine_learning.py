@@ -17,6 +17,7 @@ End-to-end model: Predict the outcome of a match based on the map and the player
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+
 # ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐ #
 # |            Approach 1)                                                                                           | #
 # └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘ #
@@ -97,7 +98,7 @@ class RandomBaseline2(SubModel2):
         super(RandomBaseline2, self).__init__()
 
     def forward(self, x):
-        return torch.randn((x.shape[0], 1))
+        return torch.rand((x.shape[0], 1))
 
 
 class SubModel3(torch.nn.Module):
@@ -174,9 +175,11 @@ class ModelOfModels(torch.nn.Module):
 
         # SubModel3
         duration = self.sub_model_3(input_2_3)
-        duration = duration * self.norm_dict_3["stds"][str(self.num_players)] + self.norm_dict_3["means"][str(self.num_players)]
 
-        return win_loss, duration
+        # Concat the outputs
+        result = torch.cat((win_loss, duration), dim=1)
+
+        return result
 
 
 class RandomBaselineModelOfModels(ModelOfModels):
@@ -234,6 +237,7 @@ def train_model(model, train_data, train_target, test_data, test_target, loss_fu
                     test_samples += 1
 
                     if acc:
+                        print(target.shape)
                         test_output = torch.round(torch.sigmoid(test_output))
                         test_acc += (test_output == test_target).sum().item() / test_target.shape[0]
 
@@ -252,8 +256,9 @@ def train_model(model, train_data, train_target, test_data, test_target, loss_fu
         if acc:
             train_acc /= samples
             test_acc /= test_samples
-
-        print(f"Epoch {epoch}, Train Loss: {loss}, Test Loss: {test_loss}, Train Acc: {train_acc}, Test Acc: {test_acc}")
+            print(f"Epoch {epoch}, Train Loss: {loss}, Test Loss: {test_loss}, Train Acc: {train_acc}, Test Acc: {test_acc}")
+        else:
+            print(f"Epoch {epoch}, Train Loss: {loss}, Test Loss: {test_loss}")
 
     print("Training finished")
     model.eval()
@@ -619,12 +624,12 @@ def sub_model_3(df, mappings, model_1, norm_dict_1, force_retrain=False):
 
         # Train the models
         models = {
-            "10": SubModel2(num_players=10),
-            "15": SubModel2(num_players=15),
-            "40": SubModel2(num_players=40)
+            "10": SubModel3(num_players=10),
+            "15": SubModel3(num_players=15),
+            "40": SubModel3(num_players=40)
         }
-        loss_function = torch.nn.BCEWithLogitsLoss()
-        random_baseline = RandomBaseline2()
+        loss_function = torch.nn.MSELoss()
+        random_baseline = RandomBaseline3()
 
         for key in models:
             # Train the model
@@ -645,9 +650,10 @@ def sub_model_3(df, mappings, model_1, norm_dict_1, force_retrain=False):
 
 
 def model_of_models(df, mappings, force_retrain=False):
-    base_path_to_model = "models/model_of_models"
-    path_to_model = {"10": f"{base_path_to_model}_10.pth", "15": f"{base_path_to_model}_15.pth", "40": f"{base_path_to_model}_40.pth"}
     print("Model of Models started")
+
+    if not os.path.exists("models"):
+        os.makedirs("models")
 
     # Create the submodels
     model_1, norm_dict_1 = sub_model_1(df, force_retrain=force_retrain)
@@ -668,3 +674,239 @@ def model_of_models(df, mappings, force_retrain=False):
 # ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐ #
 # |            Approach 2)                                                                                           | #
 # └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘ #
+
+
+class EndToEndModel(torch.nn.Module):
+    """
+    End-to-end model: Predict the outcome of a match based on the map and the players history in the match
+    Input: last 10 games of each player in the match (15 features per player); output: win/loss and duration of game
+    """
+    def __init__(self, num_players=10):
+        super(EndToEndModel, self).__init__()
+
+        self.num_players = num_players
+        self.per_player_features = 15
+        self.history = 10
+        self.num_teams = 2
+
+        # input_size is either 3001 or 4501 or 12001
+        self.input_size = self.num_players * self.per_player_features * self.history * self.num_teams + 1  # + 1 for the map
+
+        self.relu = torch.nn.ReLU()
+        self.proj1 = torch.nn.Linear(self.input_size, 2048)
+        self.proj2 = torch.nn.Linear(2048, 1024)
+        self.proj3 = torch.nn.Linear(1024, 256)
+        self.head1 = torch.nn.Linear(256, 1)
+        self.head2 = torch.nn.Linear(256, 1)
+
+    def forward(self, x):
+        proj = self.proj1(x)
+        proj = self.relu(proj)
+
+        proj = self.proj2(proj)
+        proj = self.relu(proj)
+
+        proj = self.proj3(proj)
+        proj = self.relu(proj)
+
+        win_loss = self.head1(proj)
+        duration = self.head2(proj)
+
+        result = torch.cat((win_loss, duration), dim=1)
+        return result
+
+
+class RandomBaselineEndToEndModel(EndToEndModel):
+    """
+    Random baseline model for EndToEndModel
+    """
+    def __init__(self, num_players=10):
+        super(RandomBaselineEndToEndModel, self).__init__(num_players)
+
+    def forward(self, x):
+        win_loss = torch.rand((x.shape[0], 1))
+        duration = torch.randn((x.shape[0], 1))
+        result = torch.cat((win_loss, duration), dim=1)
+        return result
+
+
+def end_to_end_data_preprocess(df, mappings, player_norm_dict):
+    print("End-to-end Model data preprocessing...")
+
+    # Get the mock database for the player stats
+    mock_db = get_mock_db_for_sub_model_1(df, how_many_last_games=10)
+
+    # Get the data and the header
+    header = df.columns.values.tolist()
+    data = df.to_numpy()
+
+    # For each match, get the players and the map
+    match_dict = {}
+    for line in data:
+        match_id_idx = header.index("match_id")
+        player_id_idx = header.index("player_id")
+        map_idx = header.index("game_map")
+        format_idx = header.index("format")
+        winner_idx = header.index("winner")
+        duration_idx = header.index("duration")
+
+        match_id = line[match_id_idx]
+
+        if match_id not in match_dict:
+            match_dict[match_id] = ([line[map_idx], line[format_idx], line[duration_idx]], [], [])
+        if line[winner_idx]:
+            match_dict[match_id][1].append(get_player_stats_from_mock_db(mock_db, line[player_id_idx]))
+        else:
+            match_dict[match_id][2].append(get_player_stats_from_mock_db(mock_db, line[player_id_idx]))
+
+    # Pad the data to have n players in each team (n depends on the format)
+    padding_player = np.zeros((10, 15))  # Hard coded shapes, because I could not find a better way, sorry
+    format_mapping = mappings["format"]
+    reverse_format_mapping = {v: k for k, v in format_mapping.items()}
+    for key in match_dict:
+        format = reverse_format_mapping[match_dict[key][0][1]]
+        expected_size = int(format.split("v")[0])
+        match_dict[key][0].append(str(expected_size))
+
+        while len(match_dict[key][1]) < expected_size:
+            match_dict[key][1].append(padding_player)
+        while len(match_dict[key][2]) < expected_size:
+            match_dict[key][2].append(padding_player)
+
+        # What the heck is wrong with the data, there were 3 bg's with 11 players on one team in a 10v10 format
+        while len(match_dict[key][1]) > expected_size:
+            match_dict[key][1].pop()
+        while len(match_dict[key][2]) > expected_size:
+            match_dict[key][2].pop()
+
+    # Split the data into data and target (be careful about the format)
+    train_data = {"10": [], "15": [], "40": []}
+    train_target = {"10": [[], []], "15": [[], []], "40": [[], []]}
+
+    for i, key in enumerate(match_dict):
+        index = match_dict[key][0][3]  # expected_size from earlier (but string)
+
+        players_win = np.array(match_dict[key][1], dtype=np.float32)
+        players_win = players_win.reshape(-1, players_win.shape[1] * players_win.shape[2])
+        players_win = (players_win - player_norm_dict["data_mean"]) / player_norm_dict["data_std"]
+
+        players_loss = np.array(match_dict[key][2], dtype=np.float32)
+        players_loss = players_loss.reshape(-1, players_loss.shape[1] * players_loss.shape[2])
+        players_loss = (players_loss - player_norm_dict["data_mean"]) / player_norm_dict["data_std"]
+
+        # Randomly shuffle the team order, because the order should not matter for the winning condition
+        if np.random.rand() < 0.5:
+            players = np.vstack((players_win, players_loss))
+            train_target[index][0].append([1])
+            train_target[index][1].append([match_dict[key][0][2]])
+        else:
+            players = np.vstack((players_loss, players_win))
+            train_target[index][0].append([0])
+            train_target[index][1].append([match_dict[key][0][2]])
+
+        players = list(players.reshape(-1))
+        players.append(match_dict[key][0][0])
+        train_data[index].append(np.array(players))
+
+    # Convert lists to numpy arrays
+    for key in train_data:
+        train_data[key] = np.array(train_data[key], dtype=np.float32)
+        train_target[key][0] = np.array(train_target[key][0], dtype=np.float32)
+        train_target[key][1] = np.array(train_target[key][1], dtype=np.float32)
+
+    means = {}
+    stds = {}
+    for key in train_target:
+        duration_mean = train_target[key][1].mean()
+        duration_std = train_target[key][1].std()
+        train_target[key][1] = (train_target[key][1] - duration_mean) / duration_std
+        means[key] = duration_mean
+        stds[key] = duration_std
+
+    # Zip the target lists
+    for key in train_target:
+        train_target[key] = np.array(list(zip(train_target[key][0], train_target[key][1])), dtype=np.float32)
+
+    # Split the data into train and test
+    test_data = {}
+    test_target = {}
+    for key in train_data:
+        train_data[key], temp_data, train_target[key], temp_target = train_test_split(train_data[key], train_target[key], test_size=0.2)
+        test_data[key] = temp_data
+        test_target[key] = temp_target
+
+    # Convert the data to PyTorch tensors
+    for key in train_data:
+        train_data[key] = torch.tensor(train_data[key], dtype=torch.float32).to(device)
+        train_target[key] = torch.tensor(train_target[key], dtype=torch.float32).to(device)
+        test_data[key] = torch.tensor(test_data[key], dtype=torch.float32).to(device)
+        test_target[key] = torch.tensor(test_target[key], dtype=torch.float32).to(device)
+
+    print("End-to-end Model data preprocessing finished")
+
+    normalization_dict = {
+        "means": means,
+        "stds": stds
+    }
+
+    return train_data, train_target, test_data, test_target, normalization_dict
+
+
+def end_to_end_models(df, mappings, force_retrain=False):
+    base_path_to_model = "models/end_to_end_model"
+    path_to_model = {"10": f"{base_path_to_model}_10.pth", "15": f"{base_path_to_model}_15.pth", "40": f"{base_path_to_model}_40.pth"}
+    path_to_norm_dict = "models/end_to_end_model_norm_dict.pkl"
+    print("End-to-end Model started")
+
+    if not os.path.exists("models"):
+        os.makedirs("models")
+
+    if os.path.exists(path_to_model["10"]) and os.path.exists(path_to_model["15"]) and os.path.exists(path_to_model["40"]) and not force_retrain:
+        print("Loading pretrained models from cache...")
+        # Load the models
+        models = {
+            "10": EndToEndModel(num_players=10),
+            "15": EndToEndModel(num_players=15),
+            "40": EndToEndModel(num_players=40)
+        }
+        models["10"].load_state_dict(torch.load(path_to_model["10"], weights_only=True))
+        models["15"].load_state_dict(torch.load(path_to_model["15"], weights_only=True))
+        models["40"].load_state_dict(torch.load(path_to_model["40"], weights_only=True))
+
+        if os.path.exists(path_to_norm_dict):
+            norm_dict = pickle.load(open(path_to_norm_dict, "rb"))
+        else:
+            _, _, _, _, player_norm_dict = sub_model_1_data_preprocess(df)
+            _, _, _, _, norm_dict = end_to_end_data_preprocess(df, mappings, player_norm_dict)
+            pickle.dump(norm_dict, open(path_to_norm_dict, "wb"))
+    else:
+        print("Creating models from scratch...")
+        # Transform the data
+        _, _, _, _, player_norm_dict = sub_model_1_data_preprocess(df)
+        train_data, train_target, test_data, test_target, norm_dict = end_to_end_data_preprocess(df, mappings, player_norm_dict)
+
+        # Train the models
+        models = {
+            "10": EndToEndModel(num_players=10),
+            "15": EndToEndModel(num_players=15),
+            "40": EndToEndModel(num_players=40)
+        }
+        loss_function = torch.nn.BCEWithLogitsLoss()
+        random_baseline = RandomBaselineEndToEndModel()
+
+        for key in models:
+            # Train the model
+            models[key] = train_model(models[key], train_data[key], train_target[key], test_data[key], test_target[key], loss_function, lr=0.001, batch_size=128, epochs=10, acc=True)
+
+            # Test the model against a random baseline
+            test_model_against_baseline(models[key], random_baseline, test_data[key], test_target[key], loss_function, acc=True)
+
+            # Save the model
+            torch.save(models[key].state_dict(), path_to_model[key])
+
+        # Save the normalization dictionary
+        pickle.dump(norm_dict, open(path_to_norm_dict, "wb"))
+
+    print("End-to-end Model finished")
+
+    return models, norm_dict

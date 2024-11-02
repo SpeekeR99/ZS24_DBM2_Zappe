@@ -2,7 +2,7 @@ from src.download import dataset_download
 from src.dataloader import load_data, transform_data_to_numeric
 from src.data_analysis import correlation, my_pca
 from src.statistics import answer_1, answer_2, asnwer_3, answer_4
-from machine_learning import sub_model_1, sub_model_2, sub_model_3
+from machine_learning import model_of_models, end_to_end_models
 
 
 def main():
@@ -41,9 +41,8 @@ def main():
     # answer_4(df)
 
     # Machine Learning
-    model_1, norm_dict_1 = sub_model_1(df)
-    # models_2 = sub_model_2(df, mappings, model_1, norm_dict_1)
-    models_3, norm_dict_3 = sub_model_3(df, mappings, model_1, norm_dict_1)
+    # models_approach_1 = model_of_models(df, mappings)
+    models_approach_2 = end_to_end_models(df, mappings)
 
 
 if __name__ == "__main__":
