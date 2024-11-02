@@ -5,10 +5,14 @@ import torch
 from sklearn.model_selection import train_test_split
 
 """
+Approach 1:
 SubModel 1) Predict the killing blows, deaths, damage, healing, etc. of a player based on his history
 SubModel 2) Predict the outcome of a match based on the map and the players in the match
 SubModel 3) Predict the duration of a match based on the map and the players in the match
 Model: Combine the three submodels to predict the outcome of a match based on the map and the players in the match
+- - - - - - -
+Approach 2:
+End-to-end model: Predict the outcome of a match based on the map and the players history in the match
 """
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -47,6 +51,7 @@ class RandomBaseline1(SubModel1):
         super(RandomBaseline1, self).__init__()
 
     def forward(self, x):
+        # Normally distributed random numbers (because player stats are normally distributed -- hopefully)
         return torch.randn((x.shape[0], 15))
 
 
@@ -77,6 +82,7 @@ class SubModel2(torch.nn.Module):
         proj = self.relu(proj)
 
         final = self.head(proj)
+        final = torch.round(torch.sigmoid(final))
         return final
 
 
@@ -88,7 +94,8 @@ class RandomBaseline2(SubModel2):
         super(RandomBaseline2, self).__init__()
 
     def forward(self, x):
-        return torch.randn((x.shape[0], 1))
+        # Uniformly distributed random integer numbers -- either 0 or 1
+        return torch.randint(0, 2, (x.shape[0], 1)).float()
 
 
 def train_model(model, train_data, train_target, test_data, test_target, loss_function, lr=0.001, batch_size=128, epochs=10, acc=False):
@@ -127,7 +134,6 @@ def train_model(model, train_data, train_target, test_data, test_target, loss_fu
                     test_samples += 1
 
                     if acc:
-                        test_output = torch.round(torch.sigmoid(test_output))
                         test_acc += (test_output == test_target).sum().item() / test_target.shape[0]
 
                 model.train()
@@ -136,7 +142,6 @@ def train_model(model, train_data, train_target, test_data, test_target, loss_fu
             samples += 1
 
             if acc:
-                output = torch.round(torch.sigmoid(output))
                 train_acc += (output == target).sum().item() / target.shape[0]
 
         loss = running_loss / samples
@@ -165,9 +170,6 @@ def test_model_against_baseline(model, baseline, test_data, test_target, loss_fu
 
     print(f"Model loss: {model_loss.item()}, Random Baseline loss: {baseline_loss.item()}")
     if acc:
-        model_output = torch.round(torch.sigmoid(model_output))
-        baseline_output = torch.round(torch.sigmoid(baseline_output))
-
         model_acc = (model_output == test_target).sum().item() / test_target.shape[0]
         baseline_acc = (baseline_output == test_target).sum().item() / test_target.shape[0]
         print(f"Model accuracy: {model_acc}, Random Baseline accuracy: {baseline_acc}")
@@ -210,7 +212,7 @@ def get_player_stats_from_mock_db(mock_db, player_id):
     else:
         # Here is my idea how to solve this:
         # 1) Return the average stats of all players in their last 10 games
-        # 2) Return some lower percentile, because we can assume that the new player is not as good as the average player
+        # 2) Return some lower percentile, assuming that the new player is not as good as the average player
         # For simplicity, I chose the first option
         return np.array([mock_db[key].mean(axis=0) for key in mock_db])
 

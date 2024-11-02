@@ -42,7 +42,7 @@ def main():
 
     # Machine Learning
     model_1, norm_dict_1 = sub_model_1(df)
-    models = sub_model_2(df, mappings, model_1, norm_dict_1)
+    models_2 = sub_model_2(df, mappings, model_1, norm_dict_1)
 
 
 if __name__ == "__main__":
