@@ -41,7 +41,7 @@ def main():
     # answer_4(df)
 
     # Machine Learning
-    # models_approach_1 = model_of_models(df, mappings)
+    models_approach_1 = model_of_models(df, mappings)
     models_approach_2 = end_to_end_models(df, mappings)
 
 

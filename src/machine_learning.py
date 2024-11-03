@@ -201,7 +201,7 @@ class RandomBaselineModelOfModels(ModelOfModels):
         return win_loss, duration
 
 
-def train_model(model, train_data, train_target, test_data, test_target, loss_function, lr=0.001, batch_size=128, epochs=10, acc=False):
+def train_model(model, train_data, train_target, test_data, test_target, loss_function, lr=0.001, batch_size=128, epochs=10, acc=False, e2e=False):
     model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
@@ -222,6 +222,11 @@ def train_model(model, train_data, train_target, test_data, test_target, loss_fu
 
             output = model(data)
 
+            if e2e:
+                win_loss = output[:, 0].reshape(-1, 1)
+                duration = output[:, 1].reshape(-1, 1)
+                output = torch.cat((torch.round(torch.sigmoid(win_loss)), duration), dim=1)
+
             loss = loss_function(output, target)
             loss.backward()
             optimizer.step()
@@ -231,15 +236,23 @@ def train_model(model, train_data, train_target, test_data, test_target, loss_fu
 
                 with torch.no_grad():
                     test_output = model(test_data)
+
+                    if e2e:
+                        test_win_loss = test_output[:, 0].reshape(-1, 1)
+                        test_duration = test_output[:, 1].reshape(-1, 1)
+                        test_output = torch.cat((torch.round(torch.sigmoid(test_win_loss)), test_duration), dim=1)
+
                     test_loss = loss_function(test_output, test_target)
 
                     running_test_loss += test_loss.item()
                     test_samples += 1
 
                     if acc:
-                        print(target.shape)
-                        test_output = torch.round(torch.sigmoid(test_output))
-                        test_acc += (test_output == test_target).sum().item() / test_target.shape[0]
+                        if e2e:
+                            test_acc += ((test_output[:, 0] == test_target[:, 0]).sum().item() + (test_output[:, 1] == test_target[:, 1]).sum().item()) / test_target.shape[0]
+                        else:
+                            test_output = torch.round(torch.sigmoid(test_output))
+                            test_acc += (test_output == test_target).sum().item() / test_target.shape[0]
 
                 model.train()
 
@@ -247,8 +260,11 @@ def train_model(model, train_data, train_target, test_data, test_target, loss_fu
             samples += 1
 
             if acc:
-                output = torch.round(torch.sigmoid(output))
-                train_acc += (output == target).sum().item() / target.shape[0]
+                if e2e:
+                    train_acc += ((output[:, 0] == target[:, 0]).sum().item() + (output[:, 1] == target[:, 1]).sum().item()) / target.shape[0]
+                else:
+                    output = torch.round(torch.sigmoid(output))
+                    train_acc += (output == target).sum().item() / target.shape[0]
 
         loss = running_loss / samples
         test_loss = running_test_loss / test_samples
@@ -265,7 +281,7 @@ def train_model(model, train_data, train_target, test_data, test_target, loss_fu
     return model
 
 
-def test_model_against_baseline(model, baseline, test_data, test_target, loss_function, acc=False):
+def test_model_against_baseline(model, baseline, test_data, test_target, loss_function, acc=False, e2e=False):
     model.eval()
     baseline.eval()
 
@@ -275,13 +291,26 @@ def test_model_against_baseline(model, baseline, test_data, test_target, loss_fu
     model_loss = loss_function(model_output, test_target)
     baseline_loss = loss_function(baseline_output, test_target)
 
+    if e2e:
+        model_win_loss = model_output[:, 0].reshape(-1, 1)
+        model_duration = model_output[:, 1].reshape(-1, 1)
+        model_output = torch.cat((torch.round(torch.sigmoid(model_win_loss)), model_duration), dim=1)
+
+        baseline_win_loss = baseline_output[:, 0].reshape(-1, 1)
+        baseline_duration = baseline_output[:, 1].reshape(-1, 1)
+        baseline_output = torch.cat((torch.round(torch.sigmoid(baseline_win_loss)), baseline_duration), dim=1)
+
     print(f"Model loss: {model_loss.item()}, Random Baseline loss: {baseline_loss.item()}")
     if acc:
-        model_output = torch.round(torch.sigmoid(model_output))
-        baseline_output = torch.round(torch.sigmoid(baseline_output))
+        if e2e:
+            model_acc = ((model_output[:, 0] == test_target[:, 0]).sum().item() + (model_output[:, 1] == test_target[:, 1]).sum().item()) / test_target.shape[0]
+            baseline_acc = ((baseline_output[:, 0] == test_target[:, 0]).sum().item() + (baseline_output[:, 1] == test_target[:, 1]).sum().item()) / test_target.shape[0]
+        else:
+            model_output = torch.round(torch.sigmoid(model_output))
+            baseline_output = torch.round(torch.sigmoid(baseline_output))
 
-        model_acc = (model_output == test_target).sum().item() / test_target.shape[0]
-        baseline_acc = (baseline_output == test_target).sum().item() / test_target.shape[0]
+            model_acc = (model_output == test_target).sum().item() / test_target.shape[0]
+            baseline_acc = (baseline_output == test_target).sum().item() / test_target.shape[0]
         print(f"Model accuracy: {model_acc}, Random Baseline accuracy: {baseline_acc}")
 
 
@@ -421,23 +450,22 @@ def sub_model_1(df, force_retrain=False):
 def sub_model_2_and_3_data_preprocess(df, mappings, model_1, norm_dict_1, target):
     print("Sub Model 2 and 3 data preprocessing...")
 
-    # Get the mock database for the player stats
-    mock_db = get_mock_db_for_sub_model_1(df, how_many_last_games=10)
-
-    # Get the data and the header
+    # Pre-compute necessary indices
     header = df.columns.values.tolist()
+    match_id_idx = header.index("match_id")
+    player_id_idx = header.index("player_id")
+    map_idx = header.index("game_map")
+    format_idx = header.index("format")
+    winner_idx = header.index("winner")
+    duration_idx = header.index("duration")
+
+    # Mock database and initial data
+    mock_db = get_mock_db_for_sub_model_1(df, how_many_last_games=10)
     data = df.to_numpy()
 
     # For each match, get the players and the map
     match_dict = {}
     for line in data:
-        match_id_idx = header.index("match_id")
-        player_id_idx = header.index("player_id")
-        map_idx = header.index("game_map")
-        format_idx = header.index("format")
-        winner_idx = header.index("winner")
-        duration_idx = header.index("duration")
-
         match_id = line[match_id_idx]
 
         if match_id not in match_dict:
@@ -733,23 +761,22 @@ class RandomBaselineEndToEndModel(EndToEndModel):
 def end_to_end_data_preprocess(df, mappings, player_norm_dict):
     print("End-to-end Model data preprocessing...")
 
-    # Get the mock database for the player stats
-    mock_db = get_mock_db_for_sub_model_1(df, how_many_last_games=10)
-
-    # Get the data and the header
+    # Pre-compute necessary indices
     header = df.columns.values.tolist()
+    match_id_idx = header.index("match_id")
+    player_id_idx = header.index("player_id")
+    map_idx = header.index("game_map")
+    format_idx = header.index("format")
+    winner_idx = header.index("winner")
+    duration_idx = header.index("duration")
+
+    # Mock database and initial data
+    mock_db = get_mock_db_for_sub_model_1(df, how_many_last_games=10)
     data = df.to_numpy()
 
     # For each match, get the players and the map
     match_dict = {}
     for line in data:
-        match_id_idx = header.index("match_id")
-        player_id_idx = header.index("player_id")
-        map_idx = header.index("game_map")
-        format_idx = header.index("format")
-        winner_idx = header.index("winner")
-        duration_idx = header.index("duration")
-
         match_id = line[match_id_idx]
 
         if match_id not in match_dict:
@@ -825,7 +852,7 @@ def end_to_end_data_preprocess(df, mappings, player_norm_dict):
 
     # Zip the target lists
     for key in train_target:
-        train_target[key] = np.array(list(zip(train_target[key][0], train_target[key][1])), dtype=np.float32)
+        train_target[key] = np.squeeze(np.array(list(zip(train_target[key][0], train_target[key][1])), dtype=np.float32))
 
     # Split the data into train and test
     test_data = {}
@@ -850,6 +877,24 @@ def end_to_end_data_preprocess(df, mappings, player_norm_dict):
     }
 
     return train_data, train_target, test_data, test_target, normalization_dict
+
+
+def combined_loss(predictions, target, classification_loss_fn=torch.nn.BCEWithLogitsLoss(), regression_loss_fn=torch.nn.MSELoss(), alpha=0.5):
+    # Separate predictions
+    win_loss_pred = predictions[:, 0]  # Prediction for win/loss
+    duration_pred = predictions[:, 1]  # Prediction for duration
+
+    # Separate target
+    win_loss_target = target[:, 0]  # Target for win/loss
+    duration_target = target[:, 1]  # Target for duration
+
+    # Compute individual losses
+    loss_classification = classification_loss_fn(win_loss_pred, win_loss_target)
+    loss_regression = regression_loss_fn(duration_pred, duration_target)
+
+    # Combine with weights
+    total_loss = alpha * loss_classification + (1 - alpha) * loss_regression
+    return total_loss
 
 
 def end_to_end_models(df, mappings, force_retrain=False):
@@ -891,7 +936,7 @@ def end_to_end_models(df, mappings, force_retrain=False):
             "15": EndToEndModel(num_players=15),
             "40": EndToEndModel(num_players=40)
         }
-        loss_function = torch.nn.BCEWithLogitsLoss()
+        loss_function = combined_loss
         random_baseline = RandomBaselineEndToEndModel()
 
         for key in models:
