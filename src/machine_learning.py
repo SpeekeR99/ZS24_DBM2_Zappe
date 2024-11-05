@@ -16,7 +16,23 @@ Approach 2:
 End-to-end model: Predict the outcome of a match based on the map and the players history in the match
 """
 
+# Set the device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Default hyperparameters for training loop
+LR = 0.001
+BATCH_SIZE = 128
+EPOCHS = 100
+
+
+def log(message):
+    """
+    Log the message to the console and to the log file
+    :param message: Message to log
+    """
+    print(message)
+    with open("models/log.txt", "a") as fp:
+        fp.write(message + "\n")
 
 
 # ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐ #
@@ -30,6 +46,9 @@ class SubModel1(torch.nn.Module):
     Simple model that picks up on the trend of the player and predicts the next game stats
     """
     def __init__(self):
+        """
+        Constructor
+        """
         super(SubModel1, self).__init__()
 
         self.relu = torch.nn.ReLU()
@@ -39,6 +58,11 @@ class SubModel1(torch.nn.Module):
         self.head = torch.nn.Linear(256, 15)
 
     def forward(self, x):
+        """
+        Forward pass
+        :param x: Input data
+        :return: Predicted next game stats
+        """
         proj = self.proj1(x)
         proj = self.relu(proj)
 
@@ -54,9 +78,17 @@ class RandomBaseline1(SubModel1):
     Random baseline model for SubModel1
     """
     def __init__(self):
+        """
+        Constructor
+        """
         super(RandomBaseline1, self).__init__()
 
     def forward(self, x):
+        """
+        Forward pass
+        :param x: Input data
+        :return: Random normally distributed numbers (player stats act normally)
+        """
         # Normally distributed random numbers (because player stats are normally distributed -- hopefully)
         return torch.randn((x.shape[0], 15))
 
@@ -66,6 +98,11 @@ class SubModel2(torch.nn.Module):
     Classificator: input map and players in the match (predicted by SubModel1); output win/loss of Team 1
     """
     def __init__(self, num_players=10):
+        """
+        Constructor
+        :param num_players: Number of players in a team
+        num_players is important because we have to train 3 different models (one for each format)
+        """
         super(SubModel2, self).__init__()
 
         self.relu = torch.nn.ReLU()
@@ -78,6 +115,11 @@ class SubModel2(torch.nn.Module):
         self.head = torch.nn.Linear(256, 1)
 
     def forward(self, x):
+        """
+        Forward pass
+        :param x: Input data
+        :return: Predicted win/loss of Team 1
+        """
         proj = self.proj1(x)
         proj = self.relu(proj)
 
@@ -96,9 +138,17 @@ class RandomBaseline2(SubModel2):
     Random baseline model for SubModel2
     """
     def __init__(self):
+        """
+        Constructor
+        """
         super(RandomBaseline2, self).__init__()
 
     def forward(self, x):
+        """
+        Forward pass
+        :param x: Input data
+        :return: Random win/loss (50% chance of winning) (uniform distribution here)
+        """
         return torch.rand((x.shape[0], 1))
 
 
@@ -107,6 +157,11 @@ class SubModel3(torch.nn.Module):
     Regressor: input map and players in the match (predicted by SubModel1); output duration of the game
     """
     def __init__(self, num_players=10):
+        """
+        Constructor
+        :param num_players: Number of players in a team
+        num_players is important because we have to train 3 different models (one for each format)
+        """
         super(SubModel3, self).__init__()
 
         self.relu = torch.nn.ReLU()
@@ -119,6 +174,11 @@ class SubModel3(torch.nn.Module):
         self.head = torch.nn.Linear(256, 1)
 
     def forward(self, x):
+        """
+        Forward pass
+        :param x: Input data
+        :return: Predicted duration of the game
+        """
         proj = self.proj1(x)
         proj = self.relu(proj)
 
@@ -137,9 +197,17 @@ class RandomBaseline3(SubModel3):
     Random baseline model for SubModel3
     """
     def __init__(self):
+        """
+        Constructor
+        """
         super(RandomBaseline3, self).__init__()
 
     def forward(self, x):
+        """
+        Forward pass
+        :param x: Input data
+        :return: Random duration (normally distributed)
+        """
         # Duration of the matches is normally distributed -- hopefully
         return torch.randn((x.shape[0], 1))
 
@@ -149,6 +217,14 @@ class ModelOfModels(torch.nn.Module):
     Model that combines the three submodels to predict the outcome of a match based on the map and the players in the match
     """
     def __init__(self, sub_model_1, sub_model_2, sub_model_3, num_players=10):
+        """
+        Constructor
+        :param sub_model_1: Sub model 1
+        :param sub_model_2: Sub model 2
+        :param sub_model_3: Sub model 3
+        :param num_players: Number of players in a team
+        Number of player is important for the choice of correct sub model 2 and 3
+        """
         super(ModelOfModels, self).__init__()
 
         self.sub_model_1 = sub_model_1
@@ -164,6 +240,11 @@ class ModelOfModels(torch.nn.Module):
         self.sub_model_3_input = self.num_players * self.per_player_features * self.num_teams + 1  # + 1 for the map
 
     def forward(self, x):
+        """
+        Forward pass
+        :param x: Input data
+        :return: Predicted win/loss of Team 1 and duration of the game
+        """
         # SubModel1
         player_stats = x[:self.sub_model_1_input].reshape(self.num_players * self.num_teams, self.per_player_features * self.history)
         player_stats_predicted = self.sub_model_1(player_stats).reshape(-1)
@@ -186,11 +267,24 @@ class RandomBaselineModelOfModels(ModelOfModels):
     Random baseline model for ModelOfModels
     """
     def __init__(self, sub_model_1, sub_model_2, sub_model_3, num_players=10):
+        """
+        Constructor
+        :param sub_model_1: Sub model 1
+        :param sub_model_2: Sub model 2
+        :param sub_model_3: Sub model 3
+        :param num_players: Number of players in a team
+
+        """
         super(RandomBaselineModelOfModels, self).__init__(sub_model_1, sub_model_2, sub_model_3, num_players)
 
     def forward(self, x):
+        """
+        Forward pass
+        :param x: Input data
+        :return: Random win/loss of Team 1 and random duration
+        """
         # Random baseline for SubModel2
-        win_loss = torch.randn((x.shape[0], 1))
+        win_loss = torch.rand((x.shape[0], 1))
 
         # Random baseline for SubModel3
         duration = torch.randn((x.shape[0], 1))
@@ -201,11 +295,27 @@ class RandomBaselineModelOfModels(ModelOfModels):
         return result
 
 
-def train_model(model, train_data, train_target, test_data, test_target, loss_function, lr=0.001, batch_size=128, epochs=10, acc=False, e2e=False):
+def train_model(model, train_data, train_target, test_data, test_target, loss_function, lr=LR, batch_size=BATCH_SIZE, epochs=EPOCHS, acc=False, e2e=False):
+    """
+    Train the model
+    :param model: Model to train
+    :param train_data: Training data
+    :param train_target: Training target
+    :param test_data: Testing data
+    :param test_target: Testing target
+    :param loss_function: Loss function
+    :param lr: Learning rate
+    :param batch_size: Batch size
+    :param epochs: Number of epochs
+    :param acc: Calculate accuracy
+    :param e2e: End-to-end model flag
+    :return: Trained model
+    """
+    # Init
     model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    print("Training model...")
+    log("Training model...")
     for epoch in range(epochs):
         running_test_loss = 0.0
         test_samples = 0
@@ -222,6 +332,7 @@ def train_model(model, train_data, train_target, test_data, test_target, loss_fu
 
             output = model(data)
 
+            # E2E model has different output format
             if e2e:
                 win_loss = output[:, 0].reshape(-1, 1)
                 duration = output[:, 1].reshape(-1, 1)
@@ -231,12 +342,14 @@ def train_model(model, train_data, train_target, test_data, test_target, loss_fu
             loss.backward()
             optimizer.step()
 
+            # Test the model
             if i % batch_size == 0:
                 model.eval()
 
                 with torch.no_grad():
                     test_output = model(test_data)
 
+                    # E2E model has different output format
                     if e2e:
                         test_win_loss = test_output[:, 0].reshape(-1, 1)
                         test_duration = test_output[:, 1].reshape(-1, 1)
@@ -247,9 +360,12 @@ def train_model(model, train_data, train_target, test_data, test_target, loss_fu
                     running_test_loss += test_loss.item()
                     test_samples += 1
 
+                    # Basically "if model is classificator"
                     if acc:
+                        # E2E model has different output format
                         if e2e:
                             test_acc += ((test_output[:, 0] == test_target[:, 0]).sum().item() + (test_output[:, 1] == test_target[:, 1]).sum().item()) / test_target.shape[0]
+                        # Basically "else model is regressor"
                         else:
                             test_output = torch.round(torch.sigmoid(test_output))
                             test_acc += (test_output == test_target).sum().item() / test_target.shape[0]
@@ -259,9 +375,12 @@ def train_model(model, train_data, train_target, test_data, test_target, loss_fu
             running_loss += loss.item()
             samples += 1
 
+            # Basically "if model is classificator"
             if acc:
+                # E2E model has different output format
                 if e2e:
                     train_acc += ((output[:, 0] == target[:, 0]).sum().item() + (output[:, 1] == target[:, 1]).sum().item()) / target.shape[0]
+                # Basically "else model is regressor"
                 else:
                     output = torch.round(torch.sigmoid(output))
                     train_acc += (output == target).sum().item() / target.shape[0]
@@ -269,19 +388,32 @@ def train_model(model, train_data, train_target, test_data, test_target, loss_fu
         loss = running_loss / samples
         test_loss = running_test_loss / test_samples
 
+        # Basically "if model is classificator"
         if acc:
             train_acc /= samples
             test_acc /= test_samples
-            print(f"Epoch {epoch}, Train Loss: {loss}, Test Loss: {test_loss}, Train Acc: {train_acc}, Test Acc: {test_acc}")
+            log(f"Epoch {epoch}, Train Loss: {loss}, Test Loss: {test_loss}, Train Acc: {train_acc}, Test Acc: {test_acc}")
+        # Basically "else model is regressor"
         else:
-            print(f"Epoch {epoch}, Train Loss: {loss}, Test Loss: {test_loss}")
+            log(f"Epoch {epoch}, Train Loss: {loss}, Test Loss: {test_loss}")
 
-    print("Training finished")
+    log("Training finished")
     model.eval()
     return model
 
 
 def test_model_against_baseline(model, baseline, test_data, test_target, loss_function, acc=False, e2e=False):
+    """
+    Test the model against a random baseline
+    :param model: Model to test
+    :param baseline: Baseline model to compare to
+    :param test_data: Testing data
+    :param test_target: Testing target
+    :param loss_function: Loss function
+    :param acc: Calculate accuracy
+    :param e2e: End-to-end model flag
+    """
+    # Turn off grads
     model.eval()
     baseline.eval()
 
@@ -291,6 +423,7 @@ def test_model_against_baseline(model, baseline, test_data, test_target, loss_fu
     model_loss = loss_function(model_output, test_target)
     baseline_loss = loss_function(baseline_output, test_target)
 
+    # E2E model has different output format
     if e2e:
         model_win_loss = model_output[:, 0].reshape(-1, 1)
         model_duration = model_output[:, 1].reshape(-1, 1)
@@ -300,8 +433,11 @@ def test_model_against_baseline(model, baseline, test_data, test_target, loss_fu
         baseline_duration = baseline_output[:, 1].reshape(-1, 1)
         baseline_output = torch.cat((torch.round(torch.sigmoid(baseline_win_loss)), baseline_duration), dim=1)
 
-    print(f"Model loss: {model_loss.item()}, Random Baseline loss: {baseline_loss.item()}")
+    log(f"Model loss: {model_loss.item()}, Random Baseline loss: {baseline_loss.item()}")
+
+    # Basically "if model is classificator"
     if acc:
+        # E2E model has different output format
         if e2e:
             model_acc = ((model_output[:, 0] == test_target[:, 0]).sum().item() + (model_output[:, 1] == test_target[:, 1]).sum().item()) / test_target.shape[0]
             baseline_acc = ((baseline_output[:, 0] == test_target[:, 0]).sum().item() + (baseline_output[:, 1] == test_target[:, 1]).sum().item()) / test_target.shape[0]
@@ -311,13 +447,15 @@ def test_model_against_baseline(model, baseline, test_data, test_target, loss_fu
 
             model_acc = (model_output == test_target).sum().item() / test_target.shape[0]
             baseline_acc = (baseline_output == test_target).sum().item() / test_target.shape[0]
-        print(f"Model accuracy: {model_acc}, Random Baseline accuracy: {baseline_acc}")
+        log(f"Model accuracy: {model_acc}, Random Baseline accuracy: {baseline_acc}")
 
 
 def get_mock_db_for_sub_model_1(df, how_many_last_games=10):
     """
     This function serves as a mock database for player history stats
     This would be replaced by a real database with real-time updates of player stats in the real world
+    :param df: DataFrame with player stats
+    :param how_many_last_games: How many last games to take for each player
     """
     # Get the data and the header
     header = df.columns.values.tolist()
@@ -344,6 +482,13 @@ def get_mock_db_for_sub_model_1(df, how_many_last_games=10):
 
 
 def get_player_stats_from_mock_db(mock_db, player_id):
+    """
+    Get the player stats from the mock database
+    This could be replaced by a real database query in the real world
+    :param mock_db: Mock database
+    :param player_id: Player ID
+    :return: Player stats
+    """
     # Normal player case (if he has less than 10 games, the mock_db already solved that)
     if player_id in mock_db:
         return mock_db[player_id]
@@ -357,7 +502,12 @@ def get_player_stats_from_mock_db(mock_db, player_id):
 
 
 def sub_model_1_data_preprocess(df):
-    print("Sub Model 1 data preprocessing...")
+    """
+    Preprocess the data for SubModel1
+    :param df: DataFrame with player stats
+    :return: Train and test data and target, normalization dictionary
+    """
+    log("Sub Model 1 data preprocessing...")
 
     # Get the data in the format for the model
     how_many_last_games = 11  # 10 for training, 1 for testing
@@ -400,21 +550,24 @@ def sub_model_1_data_preprocess(df):
         "target_std": target_std
     }
 
-    print("Sub Model 1 data preprocessing finished")
+    log("Sub Model 1 data preprocessing finished")
 
     return train_data, train_target, test_data, test_target, normalization_dict
 
 
 def sub_model_1(df, force_retrain=False):
     """
-    Predict the killing blows, deaths, damage, healing, etc. of a player based on his history
+    Construct and train SubModel1 (+ cache it)
+    :param df: DataFrame with player stats
+    :param force_retrain: Force retrain the model
+    :return: Trained model, normalization dictionary
     """
     path_to_model = "models/sub_model_1.pth"
     path_to_norm_dict = "models/sub_model_1_norm_dict.pkl"
-    print("Sub Model 1 started")
+    log("Sub Model 1 started")
 
     if os.path.exists(path_to_model) and not force_retrain:
-        print("Loading pretrained model from cache...")
+        log("Loading pretrained model from cache...")
         # Load the model
         model = SubModel1()
         model.load_state_dict(torch.load(path_to_model, weights_only=True))
@@ -425,14 +578,14 @@ def sub_model_1(df, force_retrain=False):
             _, _, _, _, norm_dict = sub_model_1_data_preprocess(df)
             pickle.dump(norm_dict, open(path_to_norm_dict, "wb"))
     else:
-        print("Creating model from scratch...")
+        log("Creating model from scratch...")
         # Preprocess the data
         train_data, train_target, test_data, test_target, norm_dict = sub_model_1_data_preprocess(df)
 
         # Train the model
         model = SubModel1()
         loss_function = torch.nn.MSELoss()
-        model = train_model(model, train_data, train_target, test_data, test_target, loss_function, lr=0.001, batch_size=128, epochs=10)
+        model = train_model(model, train_data, train_target, test_data, test_target, loss_function)
 
         # Test the model against a random baseline
         random_baseline = RandomBaseline1()
@@ -442,13 +595,22 @@ def sub_model_1(df, force_retrain=False):
         torch.save(model.state_dict(), path_to_model)
         pickle.dump(norm_dict, open(path_to_norm_dict, "wb"))
 
-    print("Sub Model 1 finished")
+    log("Sub Model 1 finished")
 
     return model, norm_dict
 
 
 def sub_model_2_and_3_data_preprocess(df, mappings, model_1, norm_dict_1, target):
-    print("Sub Model 2 and 3 data preprocessing...")
+    """
+    Preprocess the data for SubModel2 and SubModel3
+    :param df: DataFrame with player stats
+    :param mappings: Mappings for the data
+    :param model_1: SubModel1
+    :param norm_dict_1: Normalization dictionary from SubModel1
+    :param target: Target for the model (that is the only difference between SubModel2 and SubModel3)
+    :return: Train and test data and target, normalization dictionary
+    """
+    log("Sub Model 2 and 3 data preprocessing...")
 
     # Pre-compute necessary indices
     header = df.columns.values.tolist()
@@ -561,7 +723,7 @@ def sub_model_2_and_3_data_preprocess(df, mappings, model_1, norm_dict_1, target
         test_data[key] = torch.tensor(test_data[key], dtype=torch.float32).to(device)
         test_target[key] = torch.tensor(test_target[key], dtype=torch.float32).to(device)
 
-    print("Sub Model 2 and 3 data preprocessing finished")
+    log("Sub Model 2 and 3 data preprocessing finished")
 
     normalization_dict = {
         "means": means,
@@ -573,14 +735,20 @@ def sub_model_2_and_3_data_preprocess(df, mappings, model_1, norm_dict_1, target
 
 def sub_model_2(df, mappings, model_1, norm_dict_1, force_retrain=False):
     """
-    Predict the outcome of a match based on the map and the players in the match
+    Construct and train SubModel2 (+ cache it)
+    :param df: DataFrame with player stats
+    :param mappings: Mappings for the data
+    :param model_1: SubModel1
+    :param norm_dict_1: Normalization dictionary from SubModel1
+    :param force_retrain: Force retrain the model
+    :return: Trained models
     """
     base_path_to_model = "models/sub_model_2"
     path_to_model = {"10": f"{base_path_to_model}_10.pth", "15": f"{base_path_to_model}_15.pth", "40": f"{base_path_to_model}_40.pth"}
-    print("Sub Model 2 started")
+    log("Sub Model 2 started")
 
     if os.path.exists(path_to_model["10"]) and os.path.exists(path_to_model["15"]) and os.path.exists(path_to_model["40"]) and not force_retrain:
-        print("Loading pretrained models from cache...")
+        log("Loading pretrained models from cache...")
         # Load the models
         models = {
             "10": SubModel2(num_players=10),
@@ -591,7 +759,7 @@ def sub_model_2(df, mappings, model_1, norm_dict_1, force_retrain=False):
         models["15"].load_state_dict(torch.load(path_to_model["15"], weights_only=True))
         models["40"].load_state_dict(torch.load(path_to_model["40"], weights_only=True))
     else:
-        print("Creating models from scratch...")
+        log("Creating models from scratch...")
         # Transform the data
         train_data, train_target, test_data, test_target, _ = sub_model_2_and_3_data_preprocess(df, mappings, model_1, norm_dict_1, "winner")
 
@@ -606,7 +774,7 @@ def sub_model_2(df, mappings, model_1, norm_dict_1, force_retrain=False):
 
         for key in models:
             # Train the model
-            models[key] = train_model(models[key], train_data[key], train_target[key], test_data[key], test_target[key], loss_function, lr=0.001, batch_size=128, epochs=10, acc=True)
+            models[key] = train_model(models[key], train_data[key], train_target[key], test_data[key], test_target[key], loss_function, acc=True)
 
             # Test the model against a random baseline
             test_model_against_baseline(models[key], random_baseline, test_data[key], test_target[key], loss_function, acc=True)
@@ -614,22 +782,28 @@ def sub_model_2(df, mappings, model_1, norm_dict_1, force_retrain=False):
             # Save the model
             torch.save(models[key].state_dict(), path_to_model[key])
 
-    print("Sub Model 2 finished")
+    log("Sub Model 2 finished")
 
     return models
 
 
 def sub_model_3(df, mappings, model_1, norm_dict_1, force_retrain=False):
     """
-    Predict the duration of a match based on the map and the players in the match
+    Construct and train SubModel3 (+ cache it)
+    :param df: DataFrame with player stats
+    :param mappings: Mappings for the data
+    :param model_1: SubModel1
+    :param norm_dict_1: Normalization dictionary from SubModel1
+    :param force_retrain: Force retrain the model
+    :return: Trained models, normalization dictionary
     """
     base_path_to_model = "models/sub_model_3"
     path_to_norm_dict = "models/sub_model_3_norm_dict.pkl"
     path_to_model = {"10": f"{base_path_to_model}_10.pth", "15": f"{base_path_to_model}_15.pth", "40": f"{base_path_to_model}_40.pth"}
-    print("Sub Model 3 started")
+    log("Sub Model 3 started")
 
     if os.path.exists(path_to_model["10"]) and os.path.exists(path_to_model["15"]) and os.path.exists(path_to_model["40"]) and not force_retrain:
-        print("Loading pretrained models from cache...")
+        log("Loading pretrained models from cache...")
         # Load the models
         models = {
             "10": SubModel3(num_players=10),
@@ -646,7 +820,7 @@ def sub_model_3(df, mappings, model_1, norm_dict_1, force_retrain=False):
             _, _, _, _, norm_dict = sub_model_2_and_3_data_preprocess(df, mappings, model_1, norm_dict_1, "duration")
             pickle.dump(norm_dict, open(path_to_norm_dict, "wb"))
     else:
-        print("Creating models from scratch...")
+        log("Creating models from scratch...")
         # Transform the data
         train_data, train_target, test_data, test_target, norm_dict = sub_model_2_and_3_data_preprocess(df, mappings, model_1, norm_dict_1, "duration")
 
@@ -661,7 +835,7 @@ def sub_model_3(df, mappings, model_1, norm_dict_1, force_retrain=False):
 
         for key in models:
             # Train the model
-            models[key] = train_model(models[key], train_data[key], train_target[key], test_data[key], test_target[key], loss_function, lr=0.001, batch_size=128, epochs=10)
+            models[key] = train_model(models[key], train_data[key], train_target[key], test_data[key], test_target[key], loss_function)
 
             # Test the model against a random baseline
             test_model_against_baseline(models[key], random_baseline, test_data[key], test_target[key], loss_function)
@@ -672,13 +846,20 @@ def sub_model_3(df, mappings, model_1, norm_dict_1, force_retrain=False):
         # Save the normalization dictionary
         pickle.dump(norm_dict, open(path_to_norm_dict, "wb"))
 
-    print("Sub Model 3 finished")
+    log("Sub Model 3 finished")
 
     return models, norm_dict
 
 
 def model_of_models(df, mappings, force_retrain=False):
-    print("Model of Models started")
+    """
+    Construct and train ModelOfModels
+    :param df: DataFrame with player stats
+    :param mappings: Mappings for the data
+    :param force_retrain: Force retrain the model
+    :return: Trained models, normalization dictionaries
+    """
+    log("Model of Models started")
 
     if not os.path.exists("models"):
         os.makedirs("models")
@@ -694,7 +875,7 @@ def model_of_models(df, mappings, force_retrain=False):
         "40": ModelOfModels(model_1, models_2["40"], models_3["40"], num_players=40)
     }
 
-    print("Model of Models finished")
+    log("Model of Models finished")
 
     return models, norm_dict_1, norm_dict_3
 
@@ -710,6 +891,10 @@ class EndToEndModel(torch.nn.Module):
     Input: last 10 games of each player in the match (15 features per player); output: win/loss and duration of game
     """
     def __init__(self, num_players=10):
+        """
+        Constructor
+        :param num_players: Number of players in a team
+        """
         super(EndToEndModel, self).__init__()
 
         self.num_players = num_players
@@ -728,6 +913,11 @@ class EndToEndModel(torch.nn.Module):
         self.head2 = torch.nn.Linear(256, 1)
 
     def forward(self, x):
+        """
+        Forward pass
+        :param x: Input data
+        :return: Output data
+        """
         proj = self.proj1(x)
         proj = self.relu(proj)
 
@@ -750,9 +940,18 @@ class RandomBaselineEndToEndModel(EndToEndModel):
     Random baseline model for EndToEndModel
     """
     def __init__(self, num_players=10):
+        """
+        Constructor
+        :param num_players: Number of players in a team
+        """
         super(RandomBaselineEndToEndModel, self).__init__(num_players)
 
     def forward(self, x):
+        """
+        Forward pass
+        :param x: Input data
+        :return: Random win/loss of Team 1 and random duration
+        """
         win_loss = torch.rand((x.shape[0], 1))
         duration = torch.randn((x.shape[0], 1))
         # Concat the outputs
@@ -761,7 +960,14 @@ class RandomBaselineEndToEndModel(EndToEndModel):
 
 
 def end_to_end_data_preprocess(df, mappings, player_norm_dict):
-    print("End-to-end Model data preprocessing...")
+    """
+    End-to-end Model data preprocessing
+    :param df: DataFrame with player stats
+    :param mappings: Mappings for the data
+    :param player_norm_dict: Normalization dictionary from SubModel1 / preprocessing of e2e data (same thing)
+    :return: Train and test data and target, normalization dictionary
+    """
+    log("End-to-end Model data preprocessing...")
 
     # Pre-compute necessary indices
     header = df.columns.values.tolist()
@@ -871,7 +1077,7 @@ def end_to_end_data_preprocess(df, mappings, player_norm_dict):
         test_data[key] = torch.tensor(test_data[key], dtype=torch.float32).to(device)
         test_target[key] = torch.tensor(test_target[key], dtype=torch.float32).to(device)
 
-    print("End-to-end Model data preprocessing finished")
+    log("End-to-end Model data preprocessing finished")
 
     normalization_dict = {
         "means": means,
@@ -882,6 +1088,15 @@ def end_to_end_data_preprocess(df, mappings, player_norm_dict):
 
 
 def combined_loss(predictions, target, classification_loss_fn=torch.nn.BCEWithLogitsLoss(), regression_loss_fn=torch.nn.MSELoss(), alpha=0.5):
+    """
+    Combined loss function for the End-to-end model
+    :param predictions: Predictions
+    :param target: Target
+    :param classification_loss_fn: Loss function for classification
+    :param regression_loss_fn: Loss function for regression
+    :param alpha: Weight for the classification loss
+    :return: Total loss
+    """
     # Separate predictions
     win_loss_pred = predictions[:, 0]  # Prediction for win/loss
     duration_pred = predictions[:, 1]  # Prediction for duration
@@ -900,17 +1115,24 @@ def combined_loss(predictions, target, classification_loss_fn=torch.nn.BCEWithLo
 
 
 def end_to_end_models(df, mappings, force_retrain=False):
+    """
+    Construct and train End-to-end Model
+    :param df: DataFrame with player stats
+    :param mappings: Mappings for the data
+    :param force_retrain: Force retrain the model
+    :return: Trained models, normalization dictionaries
+    """
     base_path_to_model = "models/end_to_end_model"
     path_to_model = {"10": f"{base_path_to_model}_10.pth", "15": f"{base_path_to_model}_15.pth", "40": f"{base_path_to_model}_40.pth"}
     path_to_player_norm_dict = "models/end_to_end_model_player_norm_dict.pkl"
     path_to_duration_norm_dict = "models/end_to_end_model_duration_norm_dict.pkl"
-    print("End-to-end Model started")
+    log("End-to-end Model started")
 
     if not os.path.exists("models"):
         os.makedirs("models")
 
     if os.path.exists(path_to_model["10"]) and os.path.exists(path_to_model["15"]) and os.path.exists(path_to_model["40"]) and not force_retrain:
-        print("Loading pretrained models from cache...")
+        log("Loading pretrained models from cache...")
         # Load the models
         models = {
             "10": EndToEndModel(num_players=10),
@@ -930,7 +1152,7 @@ def end_to_end_models(df, mappings, force_retrain=False):
             pickle.dump(player_norm_dict, open(path_to_player_norm_dict, "wb"))
             pickle.dump(duration_norm_dict, open(path_to_duration_norm_dict, "wb"))
     else:
-        print("Creating models from scratch...")
+        log("Creating models from scratch...")
         # Transform the data
         _, _, _, _, player_norm_dict = sub_model_1_data_preprocess(df)
         train_data, train_target, test_data, test_target, duration_norm_dict = end_to_end_data_preprocess(df, mappings, player_norm_dict)
@@ -946,7 +1168,7 @@ def end_to_end_models(df, mappings, force_retrain=False):
 
         for key in models:
             # Train the model
-            models[key] = train_model(models[key], train_data[key], train_target[key], test_data[key], test_target[key], loss_function, lr=0.001, batch_size=128, epochs=10, acc=True)
+            models[key] = train_model(models[key], train_data[key], train_target[key], test_data[key], test_target[key], loss_function, acc=True)
 
             # Test the model against a random baseline
             test_model_against_baseline(models[key], random_baseline, test_data[key], test_target[key], loss_function, acc=True)
@@ -958,7 +1180,7 @@ def end_to_end_models(df, mappings, force_retrain=False):
         pickle.dump(player_norm_dict, open(path_to_player_norm_dict, "wb"))
         pickle.dump(duration_norm_dict, open(path_to_duration_norm_dict, "wb"))
 
-    print("End-to-end Model finished")
+    log("End-to-end Model finished")
 
     return models, player_norm_dict, duration_norm_dict
 
@@ -969,6 +1191,16 @@ def end_to_end_models(df, mappings, force_retrain=False):
 
 
 def transform_teams_and_map(db, mappings, team_1, team_2, match_map, player_norm_dict):
+    """
+    Transform user input in form of lists of ID's and string for map name into a format that the model can understand
+    :param db: Database to take the player stats from
+    :param mappings: Mappings for the data
+    :param team_1: List of player ID's in team 1
+    :param team_2: List of player ID's in team 2
+    :param match_map: Name of the map
+    :param player_norm_dict: Normalization dictionary from SubModel1 / preprocessing of e2e data (same thing)
+    :return: Data in the format that the model can understand
+    """
     padding_player = np.zeros((10, 15))  # Hard coded shapes, because I could not find a better way, sorry
     num_players_per_team = int(game_map_to_format(match_map).split("v")[0])
 
@@ -997,6 +1229,14 @@ def transform_teams_and_map(db, mappings, team_1, team_2, match_map, player_norm
 
 
 def use_model(models, duration_norm_dict, data, match_map):
+    """
+    Use the model to predict the outcome of the match
+    :param models: Models for the prediction (3 formats)
+    :param duration_norm_dict: Normalization dictionary for the duration
+    :param data: Data in the format that the model can understand
+    :param match_map: Name of the map
+    :return: Win/loss and duration of the match
+    """
     num_players_per_team = game_map_to_format(match_map).split("v")[0]
 
     model = models[num_players_per_team]
@@ -1020,7 +1260,19 @@ def use_model(models, duration_norm_dict, data, match_map):
 
 
 def example_usage(df, mappings, models_approach_1, player_norm_dict_1, duration_norm_dict_1, models_approach_2, player_norm_dict_2, duration_norm_dict_2):
+    """
+    Example usage of the models
+    :param df: DataFrame with player stats
+    :param mappings: Mappings for the data
+    :param models_approach_1: Models for the first approach
+    :param player_norm_dict_1: Player normalization dictionary for the first approach
+    :param duration_norm_dict_1: Duration normalization dictionary for the first approach
+    :param models_approach_2: Models for the second approach
+    :param player_norm_dict_2: Player normalization dictionary for the second approach
+    :param duration_norm_dict_2: Duration normalization dictionary for the second approach
+    """
     print("Example usage of the models...")
+    print("Input data:")
 
     # Team 1 is 4 known players and 4 completely new players (player_id 1, 2, 3, 4)
     team_1 = df["player_id"].sample(4).to_list()
@@ -1028,14 +1280,14 @@ def example_usage(df, mappings, models_approach_1, player_norm_dict_1, duration_
     team_1.append(2)
     team_1.append(3)
     team_1.append(4)
-    print(f"Player IDs in Team 1 (Your team): {team_1}")
+    print(f"\tPlayer IDs in Team 1 (Your team): {team_1}")
 
     # Team 2 is 9 known players
     team_2 = df["player_id"].sample(9).to_list()
-    print(f"Player IDs in Team 2 (opponent team): {team_2}")
+    print(f"\tPlayer IDs in Team 2 (opponent team): {team_2}")
 
     match_map = "Warsong Gulch"
-    print(f"Map: {match_map}")
+    print(f"\tMap: {match_map}")
 
     db = get_mock_db_for_sub_model_1(df, how_many_last_games=10)
     # player_norm_dict_1 == player_norm_dict_2 ; but if we decide in the future to use only one model, we won't have two
@@ -1043,11 +1295,15 @@ def example_usage(df, mappings, models_approach_1, player_norm_dict_1, duration_
 
     print("Prediction of model using approach 1:")
     win_loss, duration = use_model(models_approach_1, duration_norm_dict_1, data, match_map)
+    print("Raw output:")
+    print(f"\t{win_loss}, {duration}")
     print(f"{'Team 1 (You)' if win_loss else 'Team 2 (opponent team)'} have bigger chance of winning")
     print(f"The BattleGround will be about {duration:.0f} seconds long")
 
     print("Prediction of model using approach 2:")
     win_loss, duration = use_model(models_approach_2, duration_norm_dict_2, data, match_map)
+    print("Raw output:")
+    print(f"\t{win_loss}, {duration}")
     print(f"{'Team 1 (You)' if win_loss else 'Team 2 (opponent team)'} have bigger chance of winning")
     print(f"The BattleGround will be about {duration:.0f} seconds long")
 

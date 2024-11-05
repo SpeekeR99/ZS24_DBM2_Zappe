@@ -6,12 +6,17 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 import sys
 
-circle_viable = (sys.version_info[0] == 3 and sys.version_info[1] >= 8)  # PyCirclize funguje pouze pro Python 3.8 a vyssi
+circle_viable = (sys.version_info[0] == 3 and sys.version_info[1] >= 8)  # PyCirclize works only with Python 3.8 or higher
 if circle_viable:
     from pycirclize import Circos
 
 
 def my_pca(df):
+    """
+    Principal Component Analysis
+    :param df: Data
+    :return: Transformed data, PCA object
+    """
     print("Principal Component Analysis...")
 
     # Transform data to normalized normal distribution (standardization)
@@ -103,6 +108,11 @@ def plot_loadings(pca, df):
 
 
 def correlation(df):
+    """
+    Correlation analysis
+    :param df: Data
+    :return: Correlation matrix
+    """
     print("Correlation analysis...")
 
     # Correlation matrix
@@ -115,6 +125,10 @@ def correlation(df):
 
 
 def plot_matrix(matrix):
+    """
+    Plot correlation matrix
+    :param matrix: Correlation matrix
+    """
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(111)
 
@@ -145,6 +159,10 @@ def plot_matrix(matrix):
 
 
 def plot_circle(matrix):
+    """
+    Plot correlation circle graph
+    :param matrix: Correlation matrix
+    """
     # Preparation of sectors for circle graph
     labels = matrix.index
     sectors = {}

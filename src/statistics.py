@@ -6,6 +6,13 @@ import numpy as np
 
 
 def plot_win_rate(win_rate, win_rate_of_what, x_label, add_count=True):
+    """
+    Plot the win rate of classes or
+    :param win_rate: DataFrame with columns: mean, std, count
+    :param win_rate_of_what: What win rate are we talking about
+    :param x_label: Label for x axis
+    :param add_count: Add the distribution of the count
+    """
     fig = plt.figure(figsize=(10, 7))
     ax = fig.add_subplot(111)
 
@@ -49,6 +56,8 @@ def plot_win_rate(win_rate, win_rate_of_what, x_label, add_count=True):
 def answer_1(df, mappings):
     """
     1) Is Paladin, Hunter, Warrior and Death Knight more likely to win than other classes?
+    :param df: DataFrame with the data
+    :param mappings: Dictionary with mappings of classes
     """
     class_mapping = mappings["cls"]
     class_mapping_reversed = {v: k for k, v in class_mapping.items()}
@@ -74,6 +83,8 @@ def answer_1(df, mappings):
 def answer_2(df, mappings):
     """
     2) Is Human more likely to win than other races?
+    :param df: DataFrame with the data
+    :param mappings: Dictionary with
     """
     race_mapping = mappings["race"]
     race_mapping_reversed = {v: k for k, v in race_mapping.items()}
@@ -99,6 +110,8 @@ def answer_2(df, mappings):
 def asnwer_3(df, mappings):
     """
     3) Is having more healers in the team beneficial?
+    :param df: DataFrame with the data
+    :param mappings: Dictionary with mappings of classes and formats
     """
     class_mapping = mappings["cls"]
     format_mapping = mappings["format"]
@@ -165,6 +178,7 @@ def asnwer_3(df, mappings):
 def answer_4(df):
     """
     4) Are players more active during the weekends?
+    :param df: DataFrame with the data
     """
     # Count number of matches for each day
     df.loc[:, "day"] = pd.to_datetime(df["start_time"], unit="ns").dt.date

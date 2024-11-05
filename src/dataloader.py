@@ -2,6 +2,11 @@ import pandas as pd
 
 
 def load_bg_data(file_path):
+    """
+    Load the BattleGround data from the .csv file
+    :param file_path: Path to the .csv file
+    :return: DataFrame with the BattleGround data
+    """
     df = pd.read_csv(file_path)
     all_lines = df.shape[0]
 
@@ -19,6 +24,12 @@ def load_bg_data(file_path):
 
 
 def load_player_data(file_path, battlegrounds_df):
+    """
+    Load the Player data from the .csv file
+    :param file_path: Path to the .csv file
+    :param battlegrounds_df: DataFrame with the BattleGround data
+    :return: DataFrame with the Player data
+    """
     df = pd.read_csv(file_path)
     all_lines = df.shape[0]
 
@@ -37,6 +48,12 @@ def load_player_data(file_path, battlegrounds_df):
 
 
 def load_data(bg_file_path, player_file_path):
+    """
+    Load the data from the .csv files
+    :param bg_file_path: Path to the .csv file with the BattleGround data
+    :param player_file_path: Path to the .csv file with the Player data
+    :return: DataFrame with the merged data
+    """
     print("Loading data...")
 
     bg_df = load_bg_data(bg_file_path)
@@ -53,6 +70,11 @@ def load_data(bg_file_path, player_file_path):
 
 
 def game_map_to_format(game_map):
+    """
+    Helper function to determine the format of the BattleGround
+    :param game_map: Name of the BattleGround
+    :return: Format of the BattleGround
+    """
     maps_10_v_10 = ["Warsong Gulch", "Twin Peaks", "Battle for Gilneas", "Temple of Kotmogu", "Silvershard Mines"]
     maps_15_v_15 = ["Arathi Basin", "Eye of the Storm", "Deepwind Gorge"]
     maps_40_v_40 = ["Alterac Valley", "Isle of Conquest", "The Battle for Gilneas"]
@@ -68,6 +90,11 @@ def game_map_to_format(game_map):
 
 
 def transform_data_to_numeric(df):
+    """
+    Transform the data to numeric values
+    :param df: DataFrame with the data
+    :return: DataFrame with the transformed data, mappings of the strings to the numeric values
+    """
     print("Transforming data...")
 
     # Throw away game_type information -- all are BattleGrounds
