@@ -3,6 +3,7 @@ import numpy as np
 import pickle
 import torch
 from sklearn.model_selection import train_test_split
+from dataloader import game_map_to_format
 
 """
 Approach 1:
@@ -147,13 +148,12 @@ class ModelOfModels(torch.nn.Module):
     """
     Model that combines the three submodels to predict the outcome of a match based on the map and the players in the match
     """
-    def __init__(self, sub_model_1, sub_model_2, sub_model_3, norm_dict_3, num_players=10):
+    def __init__(self, sub_model_1, sub_model_2, sub_model_3, num_players=10):
         super(ModelOfModels, self).__init__()
 
         self.sub_model_1 = sub_model_1
         self.sub_model_2 = sub_model_2
         self.sub_model_3 = sub_model_3
-        self.norm_dict_3 = norm_dict_3
 
         self.num_players = num_players
         self.per_player_features = 15
@@ -165,19 +165,18 @@ class ModelOfModels(torch.nn.Module):
 
     def forward(self, x):
         # SubModel1
-        player_stats = x[:, :self.sub_model_1_input]
-        player_stats_predicted = self.sub_model_1(player_stats)
+        player_stats = x[:self.sub_model_1_input].reshape(self.num_players * self.num_teams, self.per_player_features * self.history)
+        player_stats_predicted = self.sub_model_1(player_stats).reshape(-1)
 
         # SubModel2
-        input_2_3 = torch.cat((player_stats_predicted, x[:, self.sub_model_1_input:]), dim=1)
+        input_2_3 = torch.cat((player_stats_predicted, x[self.sub_model_1_input:]), dim=0)
         win_loss = self.sub_model_2(input_2_3)
-        win_loss = torch.round(torch.sigmoid(win_loss))
 
         # SubModel3
         duration = self.sub_model_3(input_2_3)
 
         # Concat the outputs
-        result = torch.cat((win_loss, duration), dim=1)
+        result = torch.tensor([win_loss, duration], dtype=torch.float32).to(device)
 
         return result
 
@@ -186,19 +185,20 @@ class RandomBaselineModelOfModels(ModelOfModels):
     """
     Random baseline model for ModelOfModels
     """
-    def __init__(self, sub_model_1, sub_model_2, sub_model_3, norm_dict_3, num_players=10):
-        super(RandomBaselineModelOfModels, self).__init__(sub_model_1, sub_model_2, sub_model_3, norm_dict_3, num_players)
+    def __init__(self, sub_model_1, sub_model_2, sub_model_3, num_players=10):
+        super(RandomBaselineModelOfModels, self).__init__(sub_model_1, sub_model_2, sub_model_3, num_players)
 
     def forward(self, x):
         # Random baseline for SubModel2
         win_loss = torch.randn((x.shape[0], 1))
-        win_loss = torch.round(torch.sigmoid(win_loss))
 
         # Random baseline for SubModel3
         duration = torch.randn((x.shape[0], 1))
-        duration = duration * self.norm_dict_3["stds"][str(self.num_players)] + self.norm_dict_3["means"][str(self.num_players)]
 
-        return win_loss, duration
+        # Concat the outputs
+        result = torch.tensor([win_loss, duration], dtype=torch.float32).to(device)
+
+        return result
 
 
 def train_model(model, train_data, train_target, test_data, test_target, loss_function, lr=0.001, batch_size=128, epochs=10, acc=False, e2e=False):
@@ -689,14 +689,14 @@ def model_of_models(df, mappings, force_retrain=False):
     models_3, norm_dict_3 = sub_model_3(df, mappings, model_1, norm_dict_1, force_retrain=force_retrain)
 
     models = {
-        "10": ModelOfModels(model_1, models_2["10"], models_3["10"], norm_dict_3, num_players=10),
-        "15": ModelOfModels(model_1, models_2["15"], models_3["15"], norm_dict_3, num_players=15),
-        "40": ModelOfModels(model_1, models_2["40"], models_3["40"], norm_dict_3, num_players=40)
+        "10": ModelOfModels(model_1, models_2["10"], models_3["10"], num_players=10),
+        "15": ModelOfModels(model_1, models_2["15"], models_3["15"], num_players=15),
+        "40": ModelOfModels(model_1, models_2["40"], models_3["40"], num_players=40)
     }
 
     print("Model of Models finished")
 
-    return models
+    return models, norm_dict_1, norm_dict_3
 
 
 # ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐ #
@@ -740,7 +740,8 @@ class EndToEndModel(torch.nn.Module):
         win_loss = self.head1(proj)
         duration = self.head2(proj)
 
-        result = torch.cat((win_loss, duration), dim=1)
+        # Concat the outputs
+        result = torch.tensor([win_loss, duration], dtype=torch.float32).to(device)
         return result
 
 
@@ -754,7 +755,8 @@ class RandomBaselineEndToEndModel(EndToEndModel):
     def forward(self, x):
         win_loss = torch.rand((x.shape[0], 1))
         duration = torch.randn((x.shape[0], 1))
-        result = torch.cat((win_loss, duration), dim=1)
+        # Concat the outputs
+        result = torch.tensor([win_loss, duration], dtype=torch.float32).to(device)
         return result
 
 
@@ -900,7 +902,8 @@ def combined_loss(predictions, target, classification_loss_fn=torch.nn.BCEWithLo
 def end_to_end_models(df, mappings, force_retrain=False):
     base_path_to_model = "models/end_to_end_model"
     path_to_model = {"10": f"{base_path_to_model}_10.pth", "15": f"{base_path_to_model}_15.pth", "40": f"{base_path_to_model}_40.pth"}
-    path_to_norm_dict = "models/end_to_end_model_norm_dict.pkl"
+    path_to_player_norm_dict = "models/end_to_end_model_player_norm_dict.pkl"
+    path_to_duration_norm_dict = "models/end_to_end_model_duration_norm_dict.pkl"
     print("End-to-end Model started")
 
     if not os.path.exists("models"):
@@ -918,17 +921,19 @@ def end_to_end_models(df, mappings, force_retrain=False):
         models["15"].load_state_dict(torch.load(path_to_model["15"], weights_only=True))
         models["40"].load_state_dict(torch.load(path_to_model["40"], weights_only=True))
 
-        if os.path.exists(path_to_norm_dict):
-            norm_dict = pickle.load(open(path_to_norm_dict, "rb"))
+        if os.path.exists(path_to_player_norm_dict) and os.path.exists(path_to_duration_norm_dict):
+            player_norm_dict = pickle.load(open(path_to_player_norm_dict, "rb"))
+            duration_norm_dict = pickle.load(open(path_to_duration_norm_dict, "rb"))
         else:
             _, _, _, _, player_norm_dict = sub_model_1_data_preprocess(df)
-            _, _, _, _, norm_dict = end_to_end_data_preprocess(df, mappings, player_norm_dict)
-            pickle.dump(norm_dict, open(path_to_norm_dict, "wb"))
+            _, _, _, _, duration_norm_dict = end_to_end_data_preprocess(df, mappings, player_norm_dict)
+            pickle.dump(player_norm_dict, open(path_to_player_norm_dict, "wb"))
+            pickle.dump(duration_norm_dict, open(path_to_duration_norm_dict, "wb"))
     else:
         print("Creating models from scratch...")
         # Transform the data
         _, _, _, _, player_norm_dict = sub_model_1_data_preprocess(df)
-        train_data, train_target, test_data, test_target, norm_dict = end_to_end_data_preprocess(df, mappings, player_norm_dict)
+        train_data, train_target, test_data, test_target, duration_norm_dict = end_to_end_data_preprocess(df, mappings, player_norm_dict)
 
         # Train the models
         models = {
@@ -950,8 +955,100 @@ def end_to_end_models(df, mappings, force_retrain=False):
             torch.save(models[key].state_dict(), path_to_model[key])
 
         # Save the normalization dictionary
-        pickle.dump(norm_dict, open(path_to_norm_dict, "wb"))
+        pickle.dump(player_norm_dict, open(path_to_player_norm_dict, "wb"))
+        pickle.dump(duration_norm_dict, open(path_to_duration_norm_dict, "wb"))
 
     print("End-to-end Model finished")
 
-    return models, norm_dict
+    return models, player_norm_dict, duration_norm_dict
+
+
+# ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐ #
+# |            Real usage of models                                                                                  | #
+# └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘ #
+
+
+def transform_teams_and_map(db, mappings, team_1, team_2, match_map, player_norm_dict):
+    padding_player = np.zeros((10, 15))  # Hard coded shapes, because I could not find a better way, sorry
+    num_players_per_team = int(game_map_to_format(match_map).split("v")[0])
+
+    team_1 = [get_player_stats_from_mock_db(db, player_id) for player_id in team_1]
+    while len(team_1) < num_players_per_team:
+        team_1.append(padding_player)
+    while len(team_1) > num_players_per_team:
+        team_1.pop()
+    team_1 = np.array(team_1, dtype=np.float32)
+    # Normalize the team 1
+    team_1 = ((team_1.reshape(-1, team_1.shape[1] * team_1.shape[2]) - player_norm_dict["data_mean"]) / player_norm_dict["data_std"]).reshape(-1)
+
+    team_2 = [get_player_stats_from_mock_db(db, player_id) for player_id in team_2]
+    while len(team_2) < num_players_per_team:
+        team_2.append(padding_player)
+    while len(team_2) > num_players_per_team:
+        team_2.pop()
+    team_2 = np.array(team_2, dtype=np.float32)
+    # Normalize the team 2
+    team_2 = ((team_2.reshape(-1, team_2.shape[1] * team_2.shape[2]) - player_norm_dict["data_mean"]) / player_norm_dict["data_std"]).reshape(-1)
+
+    match_map = np.array([mappings["game_map"][match_map]], dtype=np.float32)
+
+    data = np.concatenate((team_1, team_2, match_map)).reshape(-1)
+    return data.astype(np.float32)
+
+
+def use_model(models, duration_norm_dict, data, match_map):
+    num_players_per_team = game_map_to_format(match_map).split("v")[0]
+
+    model = models[num_players_per_team]
+
+    model.eval()
+    data = torch.tensor(data, dtype=torch.float32).to(device)
+    output = model(data).detach().cpu().numpy()
+
+    win_loss = output[0]
+    duration = output[1]
+
+    # Win / loss - sigmoid and round
+    win_loss = torch.round(torch.sigmoid(torch.tensor(win_loss, dtype=torch.float32))).item()
+
+    # Denormalize the duration
+    mean = duration_norm_dict["means"][num_players_per_team]
+    std = duration_norm_dict["stds"][num_players_per_team]
+    duration = duration * std + mean
+
+    return win_loss, duration
+
+
+def example_usage(df, mappings, models_approach_1, player_norm_dict_1, duration_norm_dict_1, models_approach_2, player_norm_dict_2, duration_norm_dict_2):
+    print("Example usage of the models...")
+
+    # Team 1 is 4 known players and 4 completely new players (player_id 1, 2, 3, 4)
+    team_1 = df["player_id"].sample(4).to_list()
+    team_1.append(1)
+    team_1.append(2)
+    team_1.append(3)
+    team_1.append(4)
+    print(f"Player IDs in Team 1 (Your team): {team_1}")
+
+    # Team 2 is 9 known players
+    team_2 = df["player_id"].sample(9).to_list()
+    print(f"Player IDs in Team 2 (opponent team): {team_2}")
+
+    match_map = "Warsong Gulch"
+    print(f"Map: {match_map}")
+
+    db = get_mock_db_for_sub_model_1(df, how_many_last_games=10)
+    # player_norm_dict_1 == player_norm_dict_2 ; but if we decide in the future to use only one model, we won't have two
+    data = transform_teams_and_map(db, mappings, team_1, team_2, match_map, player_norm_dict_1)
+
+    print("Prediction of model using approach 1:")
+    win_loss, duration = use_model(models_approach_1, duration_norm_dict_1, data, match_map)
+    print(f"{'Team 1 (You)' if win_loss else 'Team 2 (opponent team)'} have bigger chance of winning")
+    print(f"The BattleGround will be about {duration:.0f} seconds long")
+
+    print("Prediction of model using approach 2:")
+    win_loss, duration = use_model(models_approach_2, duration_norm_dict_2, data, match_map)
+    print(f"{'Team 1 (You)' if win_loss else 'Team 2 (opponent team)'} have bigger chance of winning")
+    print(f"The BattleGround will be about {duration:.0f} seconds long")
+
+    print("Example usage of the models finished")
