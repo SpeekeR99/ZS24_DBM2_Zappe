@@ -22,7 +22,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Default hyperparameters for training loop
 LR = 0.001
 BATCH_SIZE = 128
-EPOCHS = 100
+EPOCHS = 10
 
 
 def log(message):
@@ -246,18 +246,22 @@ class ModelOfModels(torch.nn.Module):
         :return: Predicted win/loss of Team 1 and duration of the game
         """
         # SubModel1
-        player_stats = x[:self.sub_model_1_input].reshape(self.num_players * self.num_teams, self.per_player_features * self.history)
-        player_stats_predicted = self.sub_model_1(player_stats).reshape(-1)
+        x = x.reshape(-1, (self.sub_model_1_input + 1))
+        player_stats = x[:, :-1]
+        player_stats = player_stats.reshape(-1, self.per_player_features * self.history)
+
+        player_stats_predicted = self.sub_model_1(player_stats).reshape(-1, self.num_players * self.per_player_features * self.num_teams)
 
         # SubModel2
-        input_2_3 = torch.cat((player_stats_predicted, x[self.sub_model_1_input:]), dim=0)
+        last_column = x[:, -1].reshape(-1, 1)
+        input_2_3 = torch.cat((player_stats_predicted, last_column), dim=1)
         win_loss = self.sub_model_2(input_2_3)
 
         # SubModel3
         duration = self.sub_model_3(input_2_3)
 
         # Concat the outputs
-        result = torch.tensor([win_loss, duration], dtype=torch.float32).to(device)
+        result = torch.cat((win_loss, duration), dim=1)
 
         return result
 
@@ -918,6 +922,8 @@ class EndToEndModel(torch.nn.Module):
         :param x: Input data
         :return: Output data
         """
+        x = x.reshape(-1, self.input_size)
+
         proj = self.proj1(x)
         proj = self.relu(proj)
 
@@ -930,8 +936,12 @@ class EndToEndModel(torch.nn.Module):
         win_loss = self.head1(proj)
         duration = self.head2(proj)
 
+        if win_loss.shape[0] == 1:
+            win_loss = win_loss.unsqueeze(0)
+            duration = duration.unsqueeze(0)
+
         # Concat the outputs
-        result = torch.tensor([win_loss, duration], dtype=torch.float32).to(device)
+        result = torch.cat((win_loss, duration), dim=1)
         return result
 
 
@@ -955,7 +965,7 @@ class RandomBaselineEndToEndModel(EndToEndModel):
         win_loss = torch.rand((x.shape[0], 1))
         duration = torch.randn((x.shape[0], 1))
         # Concat the outputs
-        result = torch.tensor([win_loss, duration], dtype=torch.float32).to(device)
+        result = torch.cat((win_loss, duration), dim=1).to(device)
         return result
 
 
@@ -1185,6 +1195,45 @@ def end_to_end_models(df, mappings, force_retrain=False):
     return models, player_norm_dict, duration_norm_dict
 
 
+def test_models_against_each_other(df, mappings):
+    """
+    Test the approach 1 against the approach 2 (model of models vs end to end models)
+    """
+    models_1, _, _ = model_of_models(df, mappings)
+    models_2, player_norm_dict, _ = end_to_end_models(df, mappings)
+    _, _, test_data, test_target, _ = end_to_end_data_preprocess(df, mappings, player_norm_dict)
+    loss_function = combined_loss
+
+    # Turn off grads
+    for key in models_1:
+        model_1 = models_1[key]
+        model_2 = models_2[key]
+
+        model_1.eval()
+        model_2.eval()
+
+        output_1 = model_1(test_data[key])
+        output_2 = model_2(test_data[key])
+
+        loss_1 = loss_function(output_1, test_target[key])
+        loss_2 = loss_function(output_2, test_target[key])
+
+        log(f"Approach 1 loss: {loss_1.item()}, Approach 2 loss: {loss_2.item()}")
+
+        model_1_win_loss = output_1[:, 0].reshape(-1, 1)
+        model_1_duration = output_1[:, 1].reshape(-1, 1)
+        model_1_output = torch.cat((torch.round(torch.sigmoid(model_1_win_loss)), model_1_duration), dim=1)
+
+        model_2_win_loss = output_2[:, 0].reshape(-1, 1)
+        model_2_duration = output_2[:, 1].reshape(-1, 1)
+        model_2_output = torch.cat((torch.round(torch.sigmoid(model_2_win_loss)), model_2_duration), dim=1)
+
+        model_1_acc = ((model_1_output[:, 0] == test_target[key][:, 0]).sum().item() + (model_1_output[:, 1] == test_target[key][:, 1]).sum().item()) / test_target[key].shape[0]
+        model_2_acc = ((model_2_output[:, 0] == test_target[key][:, 0]).sum().item() + (model_2_output[:, 1] == test_target[key][:, 1]).sum().item()) / test_target[key].shape[0]
+
+        log(f"Approach 1 accuracy: {model_1_acc}, Approach 2 accuracy: {model_2_acc}")
+
+
 # ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐ #
 # |            Real usage of models                                                                                  | #
 # └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘ #
@@ -1243,7 +1292,7 @@ def use_model(models, duration_norm_dict, data, match_map):
 
     model.eval()
     data = torch.tensor(data, dtype=torch.float32).to(device)
-    output = model(data).detach().cpu().numpy()
+    output = model(data).detach().cpu().numpy().reshape(-1)
 
     win_loss = output[0]
     duration = output[1]
