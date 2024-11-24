@@ -13,7 +13,7 @@ def plot_win_rate(win_rate, win_rate_of_what, x_label, add_count=True):
     :param x_label: Label for x axis
     :param add_count: Add the distribution of the count
     """
-    fig = plt.figure(figsize=(10, 7))
+    fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(111)
 
     width = win_rate["count"] / win_rate["count"].max()
@@ -38,7 +38,8 @@ def plot_win_rate(win_rate, win_rate_of_what, x_label, add_count=True):
     ax.set_xticklabels(win_rate.index, rotation=22.5)
     ax.set_xlabel(x_label)
     ax.set_ylabel("Win rate")
-    ax.set_title(f"Win rate of {win_rate_of_what}")
+    title = f"Win rate of {win_rate_of_what}\nThe width of the bars represents the count of the class (distribution)"
+    ax.set_title(title)
 
     # Create legend
     bar_patch = Line2D([0], [0], color="green", label="Win rate")

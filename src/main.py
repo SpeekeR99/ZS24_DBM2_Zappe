@@ -39,18 +39,18 @@ def main():
     # components, pca = my_pca(df)
 
     # Answer the questions
-    # answer_1(df, mappings)
-    # answer_2(df, mappings)
-    # asnwer_3(df, mappings)
-    # answer_4(df)
+    answer_1(df, mappings)
+    answer_2(df, mappings)
+    asnwer_3(df, mappings)
+    answer_4(df)
 
     # Machine Learning
-    models_approach_1, player_norm_dict_1, duration_norm_dict_1 = model_of_models(df, mappings)
-    models_approach_2, player_norm_dict_2, duration_norm_dict_2 = end_to_end_models(df, mappings)
+    # models_approach_1, player_norm_dict_1, duration_norm_dict_1 = model_of_models(df, mappings)
+    # models_approach_2, player_norm_dict_2, duration_norm_dict_2 = end_to_end_models(df, mappings)
     # test_models_against_each_other(df, mappings)
 
     # Real usage of the models
-    example_usage(df, mappings, models_approach_1, player_norm_dict_1, duration_norm_dict_1, models_approach_2, player_norm_dict_2, duration_norm_dict_2)
+    # example_usage(df, mappings, models_approach_1, player_norm_dict_1, duration_norm_dict_1, models_approach_2, player_norm_dict_2, duration_norm_dict_2)
 
 
 if __name__ == "__main__":
